@@ -4,6 +4,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 
+from cumulative_graph.detect_abrupt import detect_abrupt_changes_cusum
+
+
 def forecast_with_exponential_smoothing(df, value_column, forecast_period, last_change_point):
     """
     Forecast future values using Exponential Smoothing starting from the last change point.
