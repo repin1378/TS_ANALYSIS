@@ -7,6 +7,7 @@ from sklearn.linear_model import LinearRegression
 
 def detect_abrupt_changes(
     dataframe: pd.DataFrame,
+    start_event: str = "START_TIME",
     time_column: str = "TIME",
     value_column: str = "VALUE",
     model: str = "l2",
@@ -37,7 +38,8 @@ def detect_abrupt_changes(
     # Extract time and value coordinates for change points
     results = pd.DataFrame({
         "DELTA_SECONDS": dataframe[time_column].iloc[change_points[:-1]].values,  # Ignore the last point as it's the end
-        "INDEX": dataframe[value_column].iloc[change_points[:-1]].values
+        "INDEX": dataframe[value_column].iloc[change_points[:-1]].values,
+        "START_TIME": dataframe[start_event].iloc[change_points[:-1]].values
     })
     return results
 

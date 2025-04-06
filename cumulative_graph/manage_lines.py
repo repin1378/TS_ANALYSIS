@@ -44,9 +44,9 @@ def get_line_equation(change_points_df, df):
     Returns:
         list: A list of equations in the form of (m, b) for each line segment between change points.
     """
-    first_element = pd.DataFrame({'DELTA_SECONDS': [0], 'INDEX': [0]})
+    first_element = pd.DataFrame({'DELTA_SECONDS': [0], 'INDEX': [0], 'START_TIME': df.iloc[0][['START_TIME']]})
     print(first_element)
-    last_element = df.iloc[-1][['DELTA_SECONDS', 'INDEX']]
+    last_element = df.iloc[-1][['DELTA_SECONDS', 'INDEX', 'START_TIME']]
     change_points_df = pd.concat([first_element, change_points_df], ignore_index=True)
     change_points_df.loc[len(change_points_df)] = last_element
     print(change_points_df)

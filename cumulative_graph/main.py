@@ -13,7 +13,7 @@ from cumulative_graph.analyze_results import calculate_error_metrics
 from cumulative_graph.forecast_time_series import forecast_with_least_squares
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from sklearn.linear_model import LinearRegression
-
+import matplotlib.dates as mdates
 
 
 
@@ -21,14 +21,14 @@ from sklearn.linear_model import LinearRegression
 if __name__ == "__main__":
 
     value = '1'
-    output_file_path = '../results/CSH/2024/1_category/results.txt'
-    output_df_file_path = '../results/CSH/2024/1_category/df.csv'
-    histogram_file_path = '../results/CSH/2024/1_category/histogram.pdf'
-    detect_changes_file_path = '../results/CSH/2024/1_category/detect_changes.pdf'
+    output_file_path = '../results/CV/2024/1_category/results.txt'
+    output_df_file_path = '../results/CV/2024/1_category/df.csv'
+    histogram_file_path = '../results/CV/2024/1_category/histogram.pdf'
+    detect_changes_file_path = '../results/CV/2024/1_category/detect_changes.pdf'
     os.makedirs(os.path.dirname(output_file_path), exist_ok=True)
 
     # Create a sample DataFrame with float64 time series data
-    df = pd.read_csv('../sources/CSH_2024.csv', header=None)
+    df = pd.read_csv('../sources/CV_2024.csv', header=None)
     df.columns = ['START_TIME','CATEGORY']
     df['START_TIME'] = pd.to_datetime(df['START_TIME'], format='%d-%m-%Y %H:%M:%S')
     df['CATEGORY'] = df['CATEGORY'].astype(str)
@@ -62,7 +62,7 @@ if __name__ == "__main__":
 
     df = df.dropna()
     # Define bin edges to match data
-    bin_edges = np.arange(df['TIME_DIFF'].min(), df['TIME_DIFF'].max() + 1, 100)  # Step size of 100 sec
+    bin_edges = np.arange(df['TIME_DIFF'].min(), df['TIME_DIFF'].max() + 1, 500)  # Step size of 100 sec
     # Plot histogram
     plt.figure(figsize=(8, 5))
     plt.hist(df['TIME_DIFF'], bins=bin_edges, edgecolor='black', alpha=0.7)
@@ -78,20 +78,20 @@ if __name__ == "__main__":
     plt.show()
 
     # Detect abrupt changes
-    detected_changes = detect_abrupt_changes(df, time_column="DELTA_SECONDS", value_column="INDEX", model="rbf", pen=50)
+    detected_changes = detect_abrupt_changes(df, start_event="START_TIME", time_column="DELTA_SECONDS", value_column="INDEX", model="rbf", pen=20)
     print("Detected Change Points with Coordinates:\n", detected_changes)
 
     # Plot the results
     plt.figure(figsize=(10, 6))
-    plt.plot(df["DELTA_SECONDS"], df["INDEX"], label="Time Series")
+    plt.plot(df["START_TIME"], df["INDEX"], label="Time Series")
 
     for _, row in detected_changes.iterrows():
-        plt.axvline(row["DELTA_SECONDS"], color="red", linestyle="--", label=f"Change Point at {row['DELTA_SECONDS']:.2f}")
+        plt.axvline(row["START_TIME"], color="red", linestyle="--", label=f"Change Point at {row['START_TIME']}")
     plt.legend()
     plt.title("Abrupt Change Detection in Time Series")
-    plt.xlabel("DELTA_SECONDS")
+    plt.xlabel("START_TIME")
     plt.ylabel("INDEX")
-    plt.xlim(0, df['DELTA_SECONDS'].iloc[len(df)-1])
+    plt.xlim(df['START_TIME'].iloc[0], df['START_TIME'].iloc[len(df)-1])
     plt.ylim(0, 1)
     plt.grid()
     plt.savefig(detect_changes_file_path, dpi=300, bbox_inches='tight')
