@@ -26,13 +26,13 @@ def forecast_with_least_squares(df, value_column, forecast_period, last_change_p
         pd.DataFrame: DataFrame with forecasted values.
     """
     # Filter data starting from the last change point
-    filtered_df = df[df["DELTA_SECONDS"] >= last_change_point].copy()
+    filtered_df = df[df["DELTA_MINUTES"] >= last_change_point].copy()
 
     # Ensure data is sorted by time
-    filtered_df = filtered_df.sort_values(by="DELTA_SECONDS")
+    filtered_df = filtered_df.sort_values(by="DELTA_MINUTES")
 
     # Prepare data for linear regression
-    X = filtered_df["DELTA_SECONDS"].values.reshape(-1, 1)  # Reshape to 2D array for sklearn
+    X = filtered_df["DELTA_MINUTES"].values.reshape(-1, 1)  # Reshape to 2D array for sklearn
     y = filtered_df[value_column].values
 
     # Fit the linear regression model (least squares)
@@ -40,12 +40,12 @@ def forecast_with_least_squares(df, value_column, forecast_period, last_change_p
     model.fit(X, y)
 
     # Generate forecasts
-    future_x = np.array([filtered_df["DELTA_SECONDS"].iloc[-1] + i + 1 for i in range(forecast_period)]).reshape(-1, 1)
+    future_x = np.array([filtered_df["DELTA_MINUTES"].iloc[-1] + i + 1 for i in range(forecast_period)]).reshape(-1, 1)
     forecast_values = model.predict(future_x)
 
     # Create a DataFrame for forecasts
     forecast_df = pd.DataFrame({
-        "DELTA_SECONDS": future_x.flatten(),
+        "DELTA_MINUTES": future_x.flatten(),
         "FORECAST": forecast_values,
     })
     return forecast_df

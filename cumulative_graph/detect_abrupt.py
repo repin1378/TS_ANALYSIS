@@ -37,25 +37,25 @@ def detect_abrupt_changes(
 
     # Extract time and value coordinates for change points
     results = pd.DataFrame({
-        "DELTA_SECONDS": dataframe[time_column].iloc[change_points[:-1]].values,  # Ignore the last point as it's the end
+        "DELTA_MINUTES": dataframe[time_column].iloc[change_points[:-1]].values,  # Ignore the last point as it's the end
         "INDEX": dataframe[value_column].iloc[change_points[:-1]].values,
         "START_TIME": dataframe[start_event].iloc[change_points[:-1]].values
     })
     return results
 
-def detect_abrupt_changes_cusum(df, value_column="INDEX", time_column="DELTA_SECONDS", threshold=5, drift=0.5):
+def detect_abrupt_changes_cusum(df, value_column="INDEX", time_column="DELTA_MINUTES", threshold=5, drift=0.5):
     """
     Detects abrupt changes in a time series using the CUSUM (Cumulative Sum) algorithm.
 
     Args:
         df (pd.DataFrame): The input DataFrame containing the time series data.
         value_column (str): The column name of the time series data. Default is "INDEX".
-        time_column (str): The column name representing time intervals. Default is "DELTA_SECONDS".
+        time_column (str): The column name representing time intervals. Default is "DELTA_MINUTES".
         threshold (float): The threshold for detecting change points.
         drift (float): The drift (acceptable variation) in the time series.
 
     Returns:
-        pd.DataFrame: A DataFrame with the detected change points (DELTA_SECONDS and INDEX).
+        pd.DataFrame: A DataFrame with the detected change points (DELTA_MINUTES and INDEX).
     """
     # Extract the time series values
     time_series = df[value_column].values
@@ -81,7 +81,7 @@ def detect_abrupt_changes_cusum(df, value_column="INDEX", time_column="DELTA_SEC
             cusum_neg[i] = 0  # Reset after detecting a change
 
     # Create a DataFrame for the detected change points
-    change_points_df = pd.DataFrame(change_points, columns=["DELTA_SECONDS", "INDEX"])
+    change_points_df = pd.DataFrame(change_points, columns=["DELTA_MINUTES", "INDEX"])
 
     # Return the DataFrame with detected change points
     return change_points_df
