@@ -21,16 +21,28 @@ import matplotlib.dates as mdates
 # Example usage
 if __name__ == "__main__":
 
-    value = '1'
-    output_file_path = '../results/CV/2024/1_category/results.txt'
-    output_df_file_path = '../results/CV/2024/1_category/df.csv'
-    histogram_file_path = '../results/CV/2024/1_category/histogram.pdf'
-    detect_changes_file_path = '../results/CV/2024/1_category/detect_changes.pdf'
-    output_report_file_path = '../results/CV/2024/1_category/report_df.csv'
+    value = 'all'
+    department_name = 'CSH'
+    output_file_path = '../results/CV/2023/1_category/results.txt'
+    output_df_file_path = '../results/CV/2023/1_category/df.csv'
+    histogram_file_path = '../results/CV/2023/1_category/histogram.pdf'
+    detect_changes_file_path = '../results/CV/2023/1_category/detect_changes.pdf'
+    output_report_file_path = '../results/CV/2023/1_category/report_df.csv'
     os.makedirs(os.path.dirname(output_file_path), exist_ok=True)
 
+    #get optimal settings
+    print('Оптимальные настройки')
+    settings_df = pd.read_json('optimal_settings.json')
+    settings_df['category'] = settings_df['category'].astype(str)
+    settings_df.query("(department==@department_name) and (category==@value)", inplace=True)
+    settings_df = settings_df.reset_index(drop=True)
+    print(settings_df.info())
+    print(settings_df.to_string())
+    hist_param = settings_df['hist'].iloc[0]
+    penalty_param = settings_df['penalty'].iloc[0]
+
     # Create a sample DataFrame with float64 time series data
-    df = pd.read_csv('../sources/CV_2023.csv', header=None)
+    df = pd.read_csv('../sources/CSH_2023.csv', header=None)
     df.columns = ['START_TIME','CATEGORY']
     df['START_TIME'] = pd.to_datetime(df['START_TIME'], format='%d-%m-%Y %H:%M:%S')
     df['CATEGORY'] = df['CATEGORY'].astype(str)
@@ -44,6 +56,7 @@ if __name__ == "__main__":
         df = df.reset_index(drop=True)
         print("After filtering get a new DataFrame:\n")
         print(df.head())
+        print('DATAFRAME LENGHT:\n')
         print(len(df))
     print(df['START_TIME'].iloc[0])
     df['START_TIME'] = pd.to_datetime(df['START_TIME'])
@@ -54,7 +67,7 @@ if __name__ == "__main__":
     print(df.head())
     print(df.info())
     df['TIME_DIFF'] = df['DELTA_MINUTES'].diff()
-    df['TIME_DIFF'].iloc[0]=0.0
+    df.loc[df.index[0], 'TIME_DIFF'] = 0.0
     print(df.head())
     print(df.info())
     df['INDEX'] = (1 / len(df)) * (df.index)
@@ -63,9 +76,10 @@ if __name__ == "__main__":
     print(df.info())
     df.to_csv(output_df_file_path, index=True)
 
+
     df = df.dropna()
     # Define bin edges to match data
-    bin_edges = np.arange(df['TIME_DIFF'].min(), df['TIME_DIFF'].max() + 1, 500)  # Step size of 100 sec
+    bin_edges = np.arange(df['TIME_DIFF'].min(), df['TIME_DIFF'].max() + 1, hist_param)  # Step size of 100 sec
     # Plot histogram
     plt.figure(figsize=(8, 5))
     plt.hist(df['TIME_DIFF'], bins=bin_edges, edgecolor='black', alpha=0.7)
@@ -81,7 +95,7 @@ if __name__ == "__main__":
     plt.show()
 
     # Detect abrupt changes
-    detected_changes = detect_abrupt_changes(df, start_event="START_TIME", time_column="DELTA_MINUTES", value_column="INDEX", model="rbf", pen=15)
+    detected_changes = detect_abrupt_changes(df, start_event="START_TIME", time_column="DELTA_MINUTES", value_column="INDEX", model="rbf", pen=penalty_param)
     print("Detected Change Points with Coordinates:\n", detected_changes)
 
     # Plot the results
@@ -127,7 +141,7 @@ if __name__ == "__main__":
         line_equations = get_line_equation(detected_changes, df)
         f.write("\nEquations of the best fit lines between change points (Least Squares):\n")
         for i, (m, b) in enumerate(line_equations):
-            f.write(f"Line {i + 1}: y = {m:.8f}x + {b:.2f}\n")
+            f.write(f"Line {i + 1}: y = {m:.8f}x + ({b:.2f})\n")
         if not detected_changes.empty:
             last_change_point = detected_changes["DELTA_MINUTES"].iloc[-1]
         else:

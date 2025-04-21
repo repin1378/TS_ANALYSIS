@@ -83,7 +83,7 @@ def create_report(df, change_points_df, line_equations):
 
     df_report = pd.DataFrame(columns=['Seconds_start_point','Date_start_point','Seconds_last_point','Date_last_point','Equations_of_line','Monthly_index'])
     for i, (m, b) in enumerate(line_equations):
-        str_line=f"Line {i + 1}: y = {m:.8f}x + {b:.8f}"
+        str_line=f"Line {i + 1}: y = {m:.8f}x + ({b:.8f})"
         monthly_index = m*43800
         new_row = {'Seconds_start_point': change_points_df["DELTA_MINUTES"].iloc[i], 'Date_start_point': change_points_df["START_TIME"].iloc[i], 'Seconds_last_point': change_points_df["DELTA_MINUTES"].iloc[i+1], 'Date_last_point': change_points_df["START_TIME"].iloc[i+1],'Equations_of_line': str_line,'Monthly_index': round(monthly_index,5)}
         df_report.loc[i] = new_row
