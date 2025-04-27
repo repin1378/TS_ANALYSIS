@@ -21,13 +21,13 @@ import matplotlib.dates as mdates
 # Example usage
 if __name__ == "__main__":
 
-    value = 'all'
+    value = '3'
     department_name = 'CSH'
-    output_file_path = '../results/CV/2023/1_category/results.txt'
-    output_df_file_path = '../results/CV/2023/1_category/df.csv'
-    histogram_file_path = '../results/CV/2023/1_category/histogram.pdf'
-    detect_changes_file_path = '../results/CV/2023/1_category/detect_changes.pdf'
-    output_report_file_path = '../results/CV/2023/1_category/report_df.csv'
+    output_file_path = '../results/CSH/2024/3_category/results.txt'
+    output_df_file_path = '../results/CSH/2024/3_category/df.csv'
+    histogram_file_path = '../results/CSH/2024/3_category/histogram.pdf'
+    detect_changes_file_path = '../results/CSH/2024/3_category/detect_changes.pdf'
+    output_report_file_path = '../results/CSH/2024/3_category/report_df.csv'
     os.makedirs(os.path.dirname(output_file_path), exist_ok=True)
 
     #get optimal settings
@@ -42,7 +42,7 @@ if __name__ == "__main__":
     penalty_param = settings_df['penalty'].iloc[0]
 
     # Create a sample DataFrame with float64 time series data
-    df = pd.read_csv('../sources/CSH_2023.csv', header=None)
+    df = pd.read_csv('../sources/CSH_2024.csv', header=None)
     df.columns = ['START_TIME','CATEGORY']
     df['START_TIME'] = pd.to_datetime(df['START_TIME'], format='%d-%m-%Y %H:%M:%S')
     df['CATEGORY'] = df['CATEGORY'].astype(str)

@@ -1,6 +1,7 @@
 
 Equations of the best fit lines between change points (Least Squares):
-Line 1: y = 0.00000228x + 0.00
-Line 2: y = 0.00000218x + 0.01
-Line 3: y = 0.00000247x + -0.07
-Last change point: 288448.0
+Line 1: y = 0.00000220x + (0.00)
+Line 2: y = 0.00000243x + (-0.03)
+Line 3: y = 0.00000231x + (-0.00)
+Line 4: y = 0.00000231x + (0.00)
+Last change point: 326639.0
