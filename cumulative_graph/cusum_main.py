@@ -21,30 +21,30 @@ import matplotlib.dates as mdates
 # Example usage
 if __name__ == "__main__":
 
-    value = '1'
+    df = pd.read_csv('../sources/CV_2024.csv', header=None)
+    value = 'all'
     department_name = 'CV'
-    output_file_path = '../results/CV/2023/1_category/results.txt'
-    output_df_file_path = '../results/CV/2023/1_category/df.csv'
-    histogram_file_path = '../results/CV/2023/1_category/histogram.pdf'
-    detect_changes_file_path = '../results/CV/2023/1_category/detect_changes.pdf'
-    output_report_file_path = '../results/CV/2023/1_category/report_df.xlsx'
-    df = pd.read_csv('../sources/CV_2023.csv', header=None)
+    output_file_path = '../results/CUSUM/CV/2024/all_category/results.txt'
+    output_df_file_path = '../results/CUSUM/CV/2024/all_category/df.csv'
+    histogram_file_path = '../results/CUSUM/CV/2024/all_category/histogram.pdf'
+    detect_changes_file_path = '../results/CUSUM/CV/2024/all_category/detect_changes.pdf'
+    output_report_file_path = '../results/CUSUM/CV/2024/all_category/report_df.csv'
     os.makedirs(os.path.dirname(output_file_path), exist_ok=True)
 
     #get optimal settings
     print('Оптимальные настройки')
-    settings_df = pd.read_json('optimal_settings.json')
+    settings_df = pd.read_json('cusum_optimal_settings.json')
     settings_df['category'] = settings_df['category'].astype(str)
-    settings_df['department'] = settings_df['department'].astype(str)
-    settings_df.query("(department == @department_name) and (category == @value)", inplace=True)
+    settings_df.query("(department==@department_name) and (category==@value)", inplace=True)
     settings_df = settings_df.reset_index(drop=True)
     print(settings_df.info())
     print(settings_df.to_string())
     hist_param = settings_df['hist'].iloc[0]
-    penalty_param = settings_df['penalty'].iloc[0]
+    threshold_param = settings_df['threshold'].iloc[0]
+    drift_param = settings_df['drift'].iloc[0]
+
 
     # Create a sample DataFrame with float64 time series data
-    #df = pd.read_csv('../sources/CSH_2024.csv', header=None)
     df.columns = ['START_TIME','CATEGORY']
     df['START_TIME'] = pd.to_datetime(df['START_TIME'], format='%d-%m-%Y %H:%M:%S')
     df['CATEGORY'] = df['CATEGORY'].astype(str)
@@ -88,55 +88,31 @@ if __name__ == "__main__":
     # Remove empty space by adjusting x-axis limits
     plt.xlim(df['TIME_DIFF'].min(), df['TIME_DIFF'].max())
     # Labels and title
-    plt.xlabel('Интервалы между сбойными событиями, мин')
-    plt.ylabel('Частота')
-    plt.title('Гистограмма интервалов между сбойными событиями')
+    plt.xlabel('Time Difference (seconds)')
+    plt.ylabel('Frequency')
+    plt.title('Histogram of TIME_DIFF')
     plt.grid(axis='y', linestyle='--', alpha=0.7)
     # Show plot
     plt.savefig(histogram_file_path, dpi=300, bbox_inches='tight')
     plt.show()
 
-    # Detect abrupt changes
-    detected_changes = detect_abrupt_changes(df, start_event="START_TIME", time_column="DELTA_MINUTES", value_column="INDEX", model="rbf", pen=penalty_param)
-    print("Detected Change Points with Coordinates:\n", detected_changes)
+    detected_changes = detect_abrupt_changes_cusum(df, value_column="INDEX", time_column="DELTA_MINUTES", date_column="START_TIME", threshold=threshold_param, drift=drift_param)
 
     # Plot the results
     plt.figure(figsize=(10, 6))
-    plt.plot(df["START_TIME"], df["INDEX"], label="График накопленного числа событий")
+    plt.plot(df["START_TIME"], df["INDEX"], label="Time Series")
 
     for _, row in detected_changes.iterrows():
-        plt.axvline(row["START_TIME"], color="red", linestyle="--", label=f"Точка изменения {row['START_TIME']}")
+        plt.axvline(row["START_TIME"], color="red", linestyle="--", label=f"Change Point at {row['START_TIME']}")
     plt.legend()
-    plt.title("График накопленного числа событий")
-    plt.xlabel("x,мин")
-    plt.ylabel("Нормированное значение")
+    plt.title("Abrupt Change Detection in Time Series")
+    plt.xlabel("START_TIME")
+    plt.ylabel("INDEX")
     plt.xlim(df['START_TIME'].iloc[0], df['START_TIME'].iloc[len(df)-1])
     plt.ylim(0, 1)
     plt.grid()
     plt.savefig(detect_changes_file_path, dpi=300, bbox_inches='tight')
     plt.show()
-
-    # change_points_df = detect_abrupt_changes_cusum(df, value_column="INDEX", time_column="DELTA_MINUTES", threshold=40,
-    #                                                drift=0.5)
-    #
-    # # Output detected change points as DataFrame
-    # print("Change points detected:")
-    # print(detected_changes)
-    #
-    # # Plot the time series with detected change points
-    # plt.figure(figsize=(10, 6))
-    # plt.plot(df["DELTA_MINUTES"], df["INDEX"], label="Time Series")
-    # for _, row in change_points_df.iterrows():
-    #     plt.axvline(row["DELTA_MINUTES"], color="red", linestyle="--", label=f"Change Point at {row['DELTA_MINUTES']:.2f}")
-    # plt.legend()
-    # plt.title("Time Series Change Point Detection (CUSUM)")
-    # plt.xlabel("DELTA_MINUTES")
-    # plt.ylabel("INDEX")
-    # plt.xlim(0, df['DELTA_MINUTES'].iloc[len(df)-11])
-    # plt.ylim(0, 1)
-    # plt.grid()
-    # plt.show()
-
 
     # Get the equations of the lines between change points using least squares
     with open(output_file_path, "w") as f:
@@ -153,7 +129,7 @@ if __name__ == "__main__":
     print(f.read())
 
     print('CHECK_REPORT')
-    create_report(df, detected_changes, line_equations).to_excel(output_report_file_path,index=True)
+    create_report(df, detected_changes, line_equations).to_csv(output_report_file_path,index=True)
     # line_equations = get_line_equation(detected_changes, df)
     # print("\nEquations of the best fit lines between change points (Least Squares):")
     # for i, (m, b) in enumerate(line_equations):

@@ -43,7 +43,7 @@ def detect_abrupt_changes(
     })
     return results
 
-def detect_abrupt_changes_cusum(df, value_column="INDEX", time_column="DELTA_MINUTES", threshold=5, drift=0.5):
+def detect_abrupt_changes_cusum(df, value_column="INDEX", time_column="DELTA_MINUTES", date_column="START_TIME", threshold=5, drift=0.5):
     """
     Detects abrupt changes in a time series using the CUSUM (Cumulative Sum) algorithm.
 
@@ -60,6 +60,7 @@ def detect_abrupt_changes_cusum(df, value_column="INDEX", time_column="DELTA_MIN
     # Extract the time series values
     time_series = df[value_column].values
     time_stamps = df[time_column].values
+    date_stamps = df[date_column].values
 
     # Initialize the CUSUM variables
     cusum_pos = np.zeros(len(time_series))  # CUSUM for positive deviations
@@ -74,14 +75,14 @@ def detect_abrupt_changes_cusum(df, value_column="INDEX", time_column="DELTA_MIN
 
         # Check if the positive or negative CUSUM exceeds the threshold
         if cusum_pos[i] > threshold:
-            change_points.append((time_stamps[i], time_series[i]))
+            change_points.append((time_stamps[i], time_series[i], date_stamps[i]))
             cusum_pos[i] = 0  # Reset after detecting a change
         elif cusum_neg[i] < -threshold:
-            change_points.append((time_stamps[i], time_series[i]))
+            change_points.append((time_stamps[i], time_series[i], date_stamps[i]))
             cusum_neg[i] = 0  # Reset after detecting a change
 
     # Create a DataFrame for the detected change points
-    change_points_df = pd.DataFrame(change_points, columns=["DELTA_MINUTES", "INDEX"])
+    change_points_df = pd.DataFrame(change_points, columns=["DELTA_MINUTES", "INDEX", "START_TIME"])
 
     # Return the DataFrame with detected change points
     return change_points_df

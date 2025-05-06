@@ -68,24 +68,40 @@ def create_report(df, change_points_df, line_equations):
     first_element = pd.DataFrame({
         'DELTA_MINUTES': [0],
         'INDEX': [0],
-        'START_TIME': [df.iloc[1]['START_TIME']]
+        'START_TIME': [df.iloc[0]['START_TIME']]
     })
-    last_element = df.iloc[-1][['DELTA_MINUTES', 'INDEX', 'START_TIME']]
+    last_element = pd.DataFrame({
+        'DELTA_MINUTES': [df.iloc[-1]['DELTA_MINUTES']],
+        'INDEX': [df.iloc[-1]['INDEX']],
+        'START_TIME': [df.iloc[-1]['START_TIME']]
+    })
     change_points_df = pd.concat([first_element, change_points_df], ignore_index=True)
-    change_points_df.loc[len(change_points_df)] = last_element
+    change_points_df = pd.concat([change_points_df, last_element], ignore_index=True)
     print('Change Point Frame:\n')
     print(change_points_df)
     print(change_points_df.dtypes)
 
-    change_points_df['START_TIME'] = pd.to_datetime(df['START_TIME'], format='%d-%m-%Y %H:%M:%S')
+    #change_points_df['START_TIME'] = pd.to_datetime(df['START_TIME'], format='%d-%m-%Y %H:%M:%S')
     #change_points_df['START_TIME'] = change_points_df['START_TIME'].dt.strftime('%d-%m-%Y %H:%M')
-    print(change_points_df.iloc[0])
+    #print(change_points_df.iloc[0])
 
-    df_report = pd.DataFrame(columns=['Seconds_start_point','Date_start_point','Seconds_last_point','Date_last_point','Equations_of_line','Monthly_index'])
+    buf0 = [change_points_df.iloc[3]['START_TIME']]
+    buf1 = [change_points_df.iloc[-1]['START_TIME']]
+    buf2 = change_points_df["START_TIME"].iloc[2]
+
+    df_report = pd.DataFrame(columns=['Первая точка промежутка, мин','Первая точка промежутка, дата','Последняя точка промежутка, мин','Последняя точка промежутка, дата','Уравнение прямой','Месячный коэффициент'])
+    df_report.index.name = '№'
     for i, (m, b) in enumerate(line_equations):
         str_line=f"Line {i + 1}: y = {m:.8f}x + ({b:.8f})"
         monthly_index = m*43800
-        new_row = {'Seconds_start_point': change_points_df["DELTA_MINUTES"].iloc[i], 'Date_start_point': change_points_df["START_TIME"].iloc[i], 'Seconds_last_point': change_points_df["DELTA_MINUTES"].iloc[i+1], 'Date_last_point': change_points_df["START_TIME"].iloc[i+1],'Equations_of_line': str_line,'Monthly_index': round(monthly_index,5)}
+        new_row = {
+            'Первая точка промежутка, мин': change_points_df.iloc[i]["DELTA_MINUTES"],
+            'Первая точка промежутка, дата': change_points_df.iloc[i]["START_TIME"],
+            'Последняя точка промежутка, мин': change_points_df.iloc[i+1]["DELTA_MINUTES"],
+            'Последняя точка промежутка, дата': change_points_df.iloc[i+1]["START_TIME"],
+            'Уравнение прямой': str_line,
+            'Месячный коэффициент': round(monthly_index,5)
+        }
         df_report.loc[i] = new_row
     print(df_report)
 
