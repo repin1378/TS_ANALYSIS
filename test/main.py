@@ -20,19 +20,19 @@ import matplotlib.dates as mdates
 # Example usage
 if __name__ == "__main__":
 
-    value = '3'
-    department_name = 'CSH'
-    output_file_path = '../results/CSH/2024/3_category/results.txt'
-    output_df_file_path = '../results/CSH/2024/3_category/df.csv'
-    histogram_file_path = '../results/CSH/2024/3_category/histogram.pdf'
-    detect_changes_file_path = '../results/CSH/2024/3_category/detect_changes.pdf'
-    output_report_file_path = '../results/CSH/2024/3_category/report_df.xlsx'
-    df = pd.read_csv('../sources/CSH_2024.csv', header=None)
+    value = '1'
+    department_name = 'CV'
+    output_file_path = 'results/CV/2024/1_category/results.txt'
+    output_df_file_path = 'results/CV/2024/1_category/df.csv'
+    histogram_file_path = 'results/CV/2024/1_category/histogram.pdf'
+    detect_changes_file_path = 'results/CV/2024/1_category/detect_changes.pdf'
+    output_report_file_path = 'results/CV/2024/1_category/report_df.xlsx'
+    df = pd.read_csv('../sources/CV_2024.csv', header=None)
     os.makedirs(os.path.dirname(output_file_path), exist_ok=True)
 
     #get optimal settings
     print('Оптимальные настройки')
-    settings_df = pd.read_json('optimal_settings.json')
+    settings_df = pd.read_json('settings/optimal_settings.json')
     settings_df['category'] = settings_df['category'].astype(str)
     settings_df['department'] = settings_df['department'].astype(str)
     settings_df.query("(department == @department_name) and (category == @value)", inplace=True)
@@ -115,13 +115,29 @@ if __name__ == "__main__":
     plt.savefig(detect_changes_file_path, dpi=300, bbox_inches='tight')
     plt.show()
 
-    # change_points_df = detect_abrupt_changes_cusum(df, value_column="INDEX", time_column="DELTA_MINUTES", threshold=40,
-    #                                                drift=0.5)
-    #
-    # # Output detected change points as DataFrame
-    # print("Change points detected:")
-    # print(detected_changes)
-    #
+    change_points_df = detect_abrupt_changes_cusum(df, value_column="INDEX", time_column="DELTA_MINUTES", threshold=40,
+                                                   drift=0.5)
+
+    # Output detected change points as DataFrame
+    print("Change points detected:")
+    print(detected_changes)
+
+    #separate parts of dataframe
+    # Найдём индексы в df, где значения совпадают с контрольными
+    checkpoints = df[df['DELTA_MINUTES'].isin(detected_changes['DELTA_MINUTES'])].index.tolist()
+
+    #Разбиваем по этим индексам
+    dfs = []
+    prev_idx = 0
+    for idx in checkpoints:
+        dfs.append(df.iloc[prev_idx:idx])
+        prev_idx = idx
+    dfs.append(df.iloc[prev_idx:])  # Последняя часть
+
+    #Вывод
+    for i, part in enumerate(dfs):
+        print(f"\nЧасть {i}:\n{part}")
+
     # # Plot the time series with detected change points
     # plt.figure(figsize=(10, 6))
     # plt.plot(df["DELTA_MINUTES"], df["INDEX"], label="Time Series")
@@ -137,74 +153,76 @@ if __name__ == "__main__":
     # plt.show()
 
 
-    # Get the equations of the lines between change points using least squares
-    with open(output_file_path, "w") as f:
-        line_equations = get_line_equation(detected_changes, df)
-        f.write("\nEquations of the best fit lines between change points (Least Squares):\n")
-        for i, (m, b) in enumerate(line_equations):
-            f.write(f"Line {i + 1}: y = {m:.8f}x + ({b:.2f})\n")
-        if not detected_changes.empty:
-            last_change_point = detected_changes["DELTA_MINUTES"].iloc[-1]
-        else:
-            last_change_point = df["DELTA_MINUTES"].iloc[-1]
-        f.write(f"Last change point: {last_change_point}")
-    f = open(output_file_path, "r")
-    print(f.read())
 
-    print('CHECK_REPORT')
-    create_report(df, detected_changes, line_equations).to_excel(output_report_file_path,index=True)
-    # line_equations = get_line_equation(detected_changes, df)
-    # print("\nEquations of the best fit lines between change points (Least Squares):")
-    # for i, (m, b) in enumerate(line_equations):
-    #     print(f"Line {i+1}: y = {m:.8f}x + {b:.2f}")
 
-    # Get the last change point
-    # if not detected_changes.empty:
-    #     last_change_point = detected_changes["DELTA_MINUTES"].iloc[-1]
-    # else:
-    #     last_change_point = df["DELTA_MINUTES"].iloc[-1]
+    # # Get the equations of the lines between change points using least squares
+    # with open(output_file_path, "w") as f:
+    #     line_equations = get_line_equation(detected_changes, df)
+    #     f.write("\nEquations of the best fit lines between change points (Least Squares):\n")
+    #     for i, (m, b) in enumerate(line_equations):
+    #         f.write(f"Line {i + 1}: y = {m:.8f}x + ({b:.2f})\n")
+    #     if not detected_changes.empty:
+    #         last_change_point = detected_changes["DELTA_MINUTES"].iloc[-1]
+    #     else:
+    #         last_change_point = df["DELTA_MINUTES"].iloc[-1]
+    #     f.write(f"Last change point: {last_change_point}")
+    # f = open(output_file_path, "r")
+    # print(f.read())
     #
-    # print(f"Last change point: {last_change_point}")
-
-    # Fit Least Squares (Linear Regression) model
-    filtered_df = df[df["DELTA_MINUTES"] >= last_change_point].copy()
-    X = filtered_df["DELTA_MINUTES"].values.reshape(-1, 1)
-    y = filtered_df["INDEX"].values
-
-    model = LinearRegression()
-    model.fit(X, y)
-
-    # Calculate AIC for the model
-    aic = calculate_aic(model, X, y)
-    print(f"Akaike's Information Criterion (AIC): {aic}")
-
-    # Forecast future values using Least Squares (Linear Regression)
-    forecast_period = 50000
-    forecast_df = forecast_with_least_squares(df.copy(), value_column="INDEX", forecast_period=forecast_period,
-                                              last_change_point=last_change_point)
-
-    # Evaluate metrics on existing data
-    y_true = filtered_df["INDEX"].values
-    y_pred = model.predict(filtered_df["DELTA_MINUTES"].values.reshape(-1, 1))
-    metrics = calculate_error_metrics(y_true, y_pred)
-
-    print("\nError Metrics for the Model:")
-    for metric, value in metrics.items():
-        print(f"{metric}: {value:.8f}")
-
-    print("\nForecasted Values using Least Squares:")
-    print(forecast_df)
-
-    # Plot the original time series, change points, and forecasts
-    plt.figure(figsize=(12, 6))
-    plt.plot(df["DELTA_MINUTES"], df["INDEX"], label="Original Time Series")
-    plt.scatter(detected_changes["DELTA_MINUTES"], detected_changes["INDEX"], color="red", label="Change Points")
-    plt.plot(forecast_df["DELTA_MINUTES"], forecast_df["FORECAST"], label="Least Squares Forecast", linestyle="--")
-    plt.legend()
-    plt.title("Time Series with Detected Change Points and Forecast (Least Squares)")
-    plt.xlabel("DELTA_MINUTES")
-    plt.ylabel("INDEX")
-    plt.xlim(0)
-    plt.ylim(0)
-    plt.grid()
-    plt.show()
+    # print('CHECK_REPORT')
+    # create_report(df, detected_changes, line_equations).to_excel(output_report_file_path,index=True)
+    # # line_equations = get_line_equation(detected_changes, df)
+    # # print("\nEquations of the best fit lines between change points (Least Squares):")
+    # # for i, (m, b) in enumerate(line_equations):
+    # #     print(f"Line {i+1}: y = {m:.8f}x + {b:.2f}")
+    #
+    # # Get the last change point
+    # # if not detected_changes.empty:
+    # #     last_change_point = detected_changes["DELTA_MINUTES"].iloc[-1]
+    # # else:
+    # #     last_change_point = df["DELTA_MINUTES"].iloc[-1]
+    # #
+    # # print(f"Last change point: {last_change_point}")
+    #
+    # # Fit Least Squares (Linear Regression) model
+    # filtered_df = df[df["DELTA_MINUTES"] >= last_change_point].copy()
+    # X = filtered_df["DELTA_MINUTES"].values.reshape(-1, 1)
+    # y = filtered_df["INDEX"].values
+    #
+    # model = LinearRegression()
+    # model.fit(X, y)
+    #
+    # # Calculate AIC for the model
+    # aic = calculate_aic(model, X, y)
+    # print(f"Akaike's Information Criterion (AIC): {aic}")
+    #
+    # # Forecast future values using Least Squares (Linear Regression)
+    # forecast_period = 50000
+    # forecast_df = forecast_with_least_squares(df.copy(), value_column="INDEX", forecast_period=forecast_period,
+    #                                           last_change_point=last_change_point)
+    #
+    # # Evaluate metrics on existing data
+    # y_true = filtered_df["INDEX"].values
+    # y_pred = model.predict(filtered_df["DELTA_MINUTES"].values.reshape(-1, 1))
+    # metrics = calculate_error_metrics(y_true, y_pred)
+    #
+    # print("\nError Metrics for the Model:")
+    # for metric, value in metrics.items():
+    #     print(f"{metric}: {value:.8f}")
+    #
+    # print("\nForecasted Values using Least Squares:")
+    # print(forecast_df)
+    #
+    # # Plot the original time series, change points, and forecasts
+    # plt.figure(figsize=(12, 6))
+    # plt.plot(df["DELTA_MINUTES"], df["INDEX"], label="Original Time Series")
+    # plt.scatter(detected_changes["DELTA_MINUTES"], detected_changes["INDEX"], color="red", label="Change Points")
+    # plt.plot(forecast_df["DELTA_MINUTES"], forecast_df["FORECAST"], label="Least Squares Forecast", linestyle="--")
+    # plt.legend()
+    # plt.title("Time Series with Detected Change Points and Forecast (Least Squares)")
+    # plt.xlabel("DELTA_MINUTES")
+    # plt.ylabel("INDEX")
+    # plt.xlim(0)
+    # plt.ylim(0)
+    # plt.grid()
+    # plt.show()

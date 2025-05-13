@@ -1,0 +1,74 @@
+[
+  {
+    "department": "CV",
+    "category": "1",
+    "hist": 800,
+    "penalty": 10
+  },
+  {
+    "department": "CV",
+    "category": "2",
+    "hist": 300,
+    "penalty": 25
+  },
+  {
+    "department": "CV",
+    "category": "3",
+    "hist": 200,
+    "penalty": 35
+  },
+  {
+    "department": "CV",
+    "category": "all",
+    "hist": 100,
+    "penalty": 35
+  },
+  {
+    "department": "CT",
+    "category": "1",
+    "hist": 1200,
+    "penalty": 2
+  },
+  {
+    "department": "CT",
+    "category": "2",
+    "hist": 700,
+    "penalty": 5
+  },
+  {
+    "department": "CT",
+    "category": "3",
+    "hist": 400,
+    "penalty": 15
+  },
+  {
+    "department": "CT",
+    "category": "all",
+    "hist": 150,
+    "penalty": 15
+  },
+  {
+    "department": "CSH",
+    "category": "1",
+    "hist": 300,
+    "penalty": 15
+  },
+  {
+    "department": "CSH",
+    "category": "2",
+    "hist": 50,
+    "penalty": 100
+  },
+  {
+    "department": "CSH",
+    "category": "3",
+    "hist": 50,
+    "penalty": 200
+  },
+  {
+    "department": "CSH",
+    "category": "all",
+    "hist": 25,
+    "penalty": 500
+  }
+]
