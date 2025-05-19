@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from cumulative_graph.detect_abrupt import detect_abrupt_changes
 from cumulative_graph.detect_abrupt import detect_abrupt_changes_cusum
+from fitter import Fitter
+from scipy.stats import expon, kstest
 from cumulative_graph.manage_lines import least_squares_line
 from cumulative_graph.manage_lines import get_line_equation
 from cumulative_graph.analyze_results import calculate_aic
@@ -20,6 +22,7 @@ import matplotlib.dates as mdates
 # Example usage
 if __name__ == "__main__":
 
+    MINUTES_IN_MONTH = 43829.1  # среднее количество минут в месяце
     value = '1'
     department_name = 'CV'
     output_file_path = 'results/CV/2024/1_category/results.txt'
@@ -27,6 +30,9 @@ if __name__ == "__main__":
     histogram_file_path = 'results/CV/2024/1_category/histogram.pdf'
     detect_changes_file_path = 'results/CV/2024/1_category/detect_changes.pdf'
     output_report_file_path = 'results/CV/2024/1_category/report_df.xlsx'
+    exp_fit_results_path = 'results/CV/2024/1_category/exp_fit_results.xlsx'
+    pp_plot_dir = 'results/CV/2024/1_category/pp_plots'  # ← здесь можно изменить путь
+    os.makedirs(pp_plot_dir, exist_ok=True)
     df = pd.read_csv('../sources/CV_2024.csv', header=None)
     os.makedirs(os.path.dirname(output_file_path), exist_ok=True)
 
@@ -118,6 +124,9 @@ if __name__ == "__main__":
     change_points_df = detect_abrupt_changes_cusum(df, value_column="INDEX", time_column="DELTA_MINUTES", threshold=40,
                                                    drift=0.5)
 
+
+    #======================================================Новый функционал====================================================
+
     # Output detected change points as DataFrame
     print("Change points detected:")
     print(detected_changes)
@@ -134,9 +143,87 @@ if __name__ == "__main__":
         prev_idx = idx
     dfs.append(df.iloc[prev_idx:])  # Последняя часть
 
-    #Вывод
+    #Применить fitter
+    results = []
     for i, part in enumerate(dfs):
-        print(f"\nЧасть {i}:\n{part}")
+        #Проверка на пустой dataframe
+        if part.empty:
+            print(f"\nЧасть {i} пуста — пропускаем.")
+            continue
+        #Извлечь поле TIME_DIFF
+        data = part['TIME_DIFF'].dropna().values
+        #Проверка что длина dataframe не меньше 10
+        if len(data) < 10:
+            print(f"\nЧасть {i} слишком мала для анализа (n={len(data)}) — пропускаем.")
+            continue
+        #Прменение fitter dataframe для общего анализа
+        print(f"\n Анализ части {i} (n={len(data)}):")
+        f = Fitter(
+            data,
+            distributions=['norm', 'lognorm', 'expon', 'gamma', 'beta'],
+            timeout=10
+        )
+        f.fit()
+        #f.summary()
+        #Определение параметра для экспоненциального распределения
+        try:
+            f = Fitter(data, distributions=['expon'], timeout=10)
+            f.fit()
+            params = f.fitted_param['expon']
+            loc, scale = params
+            lambda_est = 1 / scale
+            lambda_est_month = lambda_est * MINUTES_IN_MONTH
+
+            print(f"  ➤ Параметры экспоненциального распределения:")
+            print(f"     loc = {loc:.4f}, scale = {scale:.4f}")
+            print(f"     λ (в минуту)      ≈ {lambda_est:.10f}")
+            print(f"     λ (в месяц)       ≈ {lambda_est_month:.4f}")
+
+            # Тест Колмогорова–Смирнова
+            ks_stat, ks_pvalue = kstest(data, 'expon', args=(0, 1 / lambda_est))
+            ks_hypothesis = ks_pvalue >= 0.05  # True = гипотеза не отклоняется
+
+            #Добавление результатов обработки в результирующий dataframe
+            results.append({
+                'dataframe_index': i,
+                'start_time': part['START_TIME'].iloc[0],
+                'end_time': part['START_TIME'].iloc[-1],wa
+                'loc': loc,
+                'scale': scale,
+                'lambda_est': lambda_est,
+                'lambda_est_month': lambda_est_month,
+                'ks_statistic': round(ks_stat, 5),
+                'ks_pvalue': round(ks_pvalue, 5),
+                'ks_hypothesis': ks_hypothesis
+            })
+
+            #Построение P-P plot сравнения идеального эсконенциального распределения и изначального dataframe
+            sorted_data = np.sort(data)
+            n = len(sorted_data)
+            empirical_cdf = np.arange(1, n + 1) / n
+            theoretical_cdf = expon.cdf(sorted_data, loc=0, scale=1 / lambda_est)
+
+            plt.figure(figsize=(6, 6))
+            plt.plot(theoretical_cdf, empirical_cdf, 'o', label='P–P точки')
+            plt.plot([0, 1], [0, 1], 'r--', label='Идеальное совпадение')
+            plt.xlabel('Теоретическая CDF (expon)')
+            plt.ylabel('Эмпирическая CDF')
+            plt.title(f'P–P Plot (часть {i})')
+            plt.legend()
+            plt.grid(True)
+            plt.axis('square')
+            plt.show()
+            file_path = os.path.join(pp_plot_dir, f'pp_plot_part_{i}.png')
+            plt.savefig(file_path)
+            plt.close()
+
+        except Exception as e:
+            print(f"  ⚠️ Ошибка при анализе части {i}: {e}")
+
+    df_result = pd.DataFrame(results)
+    df_result.to_excel(exp_fit_results_path,index=True)
+    print(df_result)
+
 
     # # Plot the time series with detected change points
     # plt.figure(figsize=(10, 6))
