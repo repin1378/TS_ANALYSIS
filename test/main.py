@@ -18,8 +18,8 @@ from sklearn.linear_model import LinearRegression
 import matplotlib.dates as mdates
 
 
+from exponential import generate_segmented_exponential_dataset, add_start_times
 
-# Example usage
 if __name__ == "__main__":
 
     MINUTES_IN_MONTH = 43829.1  # среднее количество минут в месяце
@@ -187,7 +187,7 @@ if __name__ == "__main__":
             results.append({
                 'dataframe_index': i,
                 'start_time': part['START_TIME'].iloc[0],
-                'end_time': part['START_TIME'].iloc[-1],wa
+                'end_time': part['START_TIME'].iloc[-1],
                 'loc': loc,
                 'scale': scale,
                 'lambda_est': lambda_est,
@@ -223,6 +223,21 @@ if __name__ == "__main__":
     df_result = pd.DataFrame(results)
     df_result.to_excel(exp_fit_results_path,index=True)
     print(df_result)
+
+#=================================Генерация Dataframe c экспоненциальном распределением====================================
+
+    # Список сегментов: (кол-во событий, индекс строки в df_result)
+    segments = [(1000, 0), (1000, 1), (1000, 2), (1000, 0), (1000, 1), (1000, 2), (1000, 0), (1000, 1), (1000, 2)]
+
+    # Генерация
+    df_gen = generate_segmented_exponential_dataset(df_result, segments, seed=None)
+
+    # Добавление временных меток
+    df_gen = add_start_times(df_gen, start_time_0='2023-01-01 00:00:00')
+
+    # Просмотр результата
+    print(df_gen.head())
+
 
 
     # # Plot the time series with detected change points
