@@ -16,9 +16,8 @@ from cumulative_graph.manage_lines import create_report
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from sklearn.linear_model import LinearRegression
 import matplotlib.dates as mdates
+from utils import generate_segmented_exponential_dataset, add_start_times
 
-
-from exponential import generate_segmented_exponential_dataset, add_start_times
 
 if __name__ == "__main__":
 
@@ -35,6 +34,9 @@ if __name__ == "__main__":
     os.makedirs(pp_plot_dir, exist_ok=True)
     df = pd.read_csv('../sources/CV_2024.csv', header=None)
     os.makedirs(os.path.dirname(output_file_path), exist_ok=True)
+    output_df_exp_file_path = 'results/CV/2024/1_category/df_exp.csv'
+    histogram_exp_file_path = 'results/CV/2024/1_category/histogram_exp.pdf'
+    nce_plot_file_path = 'results/CV/2024/1_category/nce_plot.pdf'
 
     #get optimal settings
     print('Оптимальные настройки')
@@ -227,7 +229,7 @@ if __name__ == "__main__":
 #=================================Генерация Dataframe c экспоненциальном распределением====================================
 
     # Список сегментов: (кол-во событий, индекс строки в df_result)
-    segments = [(1000, 0), (1000, 1), (1000, 2), (1000, 0), (1000, 1), (1000, 2), (1000, 0), (1000, 1), (1000, 2)]
+    segments = [(100, 0), (100, 1), (100, 2), (100, 0), (100, 1), (100, 2), (100, 0), (100, 1), (100, 2)]
 
     # Генерация
     df_gen = generate_segmented_exponential_dataset(df_result, segments, seed=None)
@@ -237,6 +239,91 @@ if __name__ == "__main__":
 
     # Просмотр результата
     print(df_gen.head())
+
+    # Подготовка Dataframe
+    df_gen.loc[df_gen.index[0], 'TIME_DIFF'] = 0.0
+    df_gen['INDEX'] = (1 / len(df_gen)) * (df_gen.index)
+    print(df.head())
+    print(df.tail())
+    print(df.info())
+    df_gen.to_csv(output_df_exp_file_path, index=True)
+    df_gen = df_gen.dropna()
+
+
+    # Гистограмма
+    bin_edges = np.arange(df_gen['TIME_DIFF'].min(), df_gen['TIME_DIFF'].max() + 1, hist_param)  # Step size of 100 sec
+    # Plot histogram
+    plt.figure(figsize=(8, 5))
+    plt.hist(df_gen['TIME_DIFF'], bins=bin_edges, edgecolor='black', alpha=0.7)
+    # Remove empty space by adjusting x-axis limits
+    plt.xlim(df_gen['TIME_DIFF'].min(), df_gen['TIME_DIFF'].max())
+    # Labels and title
+    plt.xlabel('Интервалы между сбойными событиями, мин')
+    plt.ylabel('Частота')
+    plt.title('Гистограмма интервалов между сбойными событиями')
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    # Show plot
+    plt.savefig(histogram_exp_file_path, dpi=300, bbox_inches='tight')
+    plt.show()
+
+    #График накопленного числа событий
+    # === Подготовка данных таблицы ===
+    segment_lengths = [length for length, _ in segments]
+    cumulative_lengths = np.cumsum(segment_lengths)[:-1]
+    switch_times = df_gen.loc[cumulative_lengths, 'START_TIME'].values
+
+    table_data = []
+
+    for i, (switch_idx, t) in enumerate(zip(cumulative_lengths, switch_times)):
+        t_pd = pd.to_datetime(t)
+        lam_val = df_gen.loc[switch_idx, 'lambda_est']
+        table_data.append([
+            i + 1,
+            switch_idx,
+            t_pd.strftime("%Y-%m-%d %H:%M"),
+            f"{lam_val:.6f}"
+        ])
+
+    # === Создание общей фигуры ===
+    fig = plt.figure(figsize=(12, 8))
+    gs = fig.add_gridspec(2, 1, height_ratios=[3, 1])
+
+    # === График накопленного числа событий ===
+    ax1 = fig.add_subplot(gs[0])
+    ax1.plot(df_gen["START_TIME"], df_gen["INDEX"], label="График накопленного числа событий")
+
+    for idx, (switch_idx, t) in enumerate(zip(cumulative_lengths, switch_times)):
+        t_pd = pd.to_datetime(t)
+        ax1.axvline(x=t_pd, color='red', linestyle='--', linewidth=1)
+
+    ax1.set_title("График накопленного числа событий")
+    ax1.set_xlabel("Время события")
+    ax1.set_ylabel("Нормированное значение")
+    ax1.set_xlim(df_gen['START_TIME'].iloc[0], df_gen['START_TIME'].iloc[-1])
+    ax1.set_ylim(0, 1)
+    ax1.grid()
+
+    # === Таблица смен λ ===
+    ax2 = fig.add_subplot(gs[1])
+    ax2.axis('off')
+    #ax2.set_title("Смены интенсивности λ", fontsize=11, loc='center')
+
+    column_labels = ["Смена №", "Индекс", "Время", "λ"]
+    table = ax2.table(
+        cellText=table_data,
+        colLabels=column_labels,
+        loc='center',
+        cellLoc='center'
+    )
+
+    table.auto_set_font_size(False)
+    table.set_fontsize(9)
+    table.scale(1.1, 1.3)
+
+    plt.tight_layout()
+    plt.savefig(nce_plot_file_path, dpi=300, bbox_inches='tight')
+    plt.show()
+
 
 
 
