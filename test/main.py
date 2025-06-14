@@ -235,7 +235,7 @@ if __name__ == "__main__":
 #=================================Генерация Dataframe c экспоненциальном распределением====================================
 
     # Список сегментов: (кол-во событий, индекс строки в df_result)
-    segments = [(500, 1), (200, 0), (500, 1), (200, 0), (500, 1), (200, 2), (500, 1), (200, 0), (500, 1), (200, 2), (500, 1)]
+    segments = [(500, 1), (200, 0), (200, 1), (800, 0), (300, 1), (150, 2), (500, 1), (200, 0), (200, 1), (900, 2), (1000, 1)]
 
     # Генерация
     df_gen = generate_segmented_exponential_dataset(df_result, segments, seed=None)
@@ -307,27 +307,38 @@ if __name__ == "__main__":
     ax1 = fig.add_subplot(gs[0])
     ax1.plot(df_gen["START_TIME"], df_gen["INDEX"], label="Накопленное число событий")
 
-    # 🔴 Красные линии — смены λ
+    # Для легенды — флаги
+    red_labeled = False
+    green_labeled = False
+
+    # 🔴 Красные линии + маркеры — смены λ (не равные min λ)
     for idx, (switch_idx, t) in enumerate(zip(cumulative_lengths, switch_times)):
         lam_val = df_gen.loc[switch_idx, 'lambda_est']
-        if lam_val == min_lambda:
-            continue  # Пропускаем, если это уже min λ
-
         t_pd = pd.to_datetime(t)
-        ax1.axvline(x=t_pd, color='red', linestyle='--', linewidth=1, label='Смена λ' if idx == 0 else None)
+        if lam_val != min_lambda:
+            ax1.plot([t_pd, t_pd], [0,1], color='red', linestyle='--', linewidth=3)
+            for y in np.linspace(0, 1,6):
+                ax1.plot(t_pd, y, marker='^', color='red', markersize=7,
+                         label='Смена λ' if not red_labeled else "")
+                red_labeled = True
+            red_labeled = True
+
 
     # # 🔵 Синие линии — сигналы CUSUM
     # for j, (_, row) in enumerate(alerts.iterrows()):
     #     ax1.axvline(x=row['START_TIME'], color='blue', linestyle='-', linewidth=1, label='CUSUM' if j == 0 else None)
 
-    # ✅ 🟢 Зелёная линия — переход к min(lambda_est)
+    # 🟢 Зелёные линии + маркеры — переход к min λ
     for idx, (switch_idx, t) in enumerate(zip(cumulative_lengths, switch_times)):
         lam_val = df_gen.loc[switch_idx, 'lambda_est']
-        if lam_val != min_lambda:
-            continue  # Пропускаем, если это уже min λ
-
-        min_lambda_time = pd.to_datetime(t)
-        ax1.axvline(x=min_lambda_time, color='green', linestyle='--', linewidth=1, label='Переход к min λ' if idx == 1 else None)
+        t_pd = pd.to_datetime(t)
+        if lam_val == min_lambda:
+            ax1.plot([t_pd, t_pd], [0,1], color='green', linestyle='--', linewidth=3)
+            for y in np.linspace(0, 1, 5):
+                ax1.plot(t_pd, y, marker='v', color='green', markersize=7,
+                         label='Возват λ к нормальному значению' if not green_labeled else "")
+                green_labeled = True
+            green_labeled = True
 
     # Оформление графика
     ax1.set_title("График накопленного числа событий")
@@ -418,8 +429,8 @@ if __name__ == "__main__":
     best_k = study.best_params['k']
     best_h = study.best_params['h']
 
-    #best_k = 5021.904234146086
-    #best_h = 152.29066096058415
+    best_k = 5021.904234146086
+    best_h = 152.29066096058415
 
     # Сокращение ложных срабатываний с min_gap=30
     alerts = detect_cusum_changes(df_gen, lambda_0, best_k, best_h, min_gap=15)
@@ -467,22 +478,18 @@ if __name__ == "__main__":
         t_pd = pd.to_datetime(t)
 
         if lam_val == min_lambda:
-            ax.axvline(
-                x=t_pd,
-                color='green',
-                linestyle='--',
-                linewidth=1.8,
-                label='Переход к min λ' if not green_labeled else None
-            )
+            ax.plot([t_pd, t_pd], [0, 1], color='green', linestyle='--', linewidth=2)
+            for y in np.linspace(0, 1, 5):
+                ax.plot(t_pd, y, marker='v', color='green', markersize=7,
+                         label='Возват λ к нормальному значению' if not green_labeled else "")
+                green_labeled = True
             green_labeled = True
         else:
-            ax.axvline(
-                x=t_pd,
-                color='red',
-                linestyle='--',
-                linewidth=1,
-                label='Смена λ' if not red_labeled else None
-            )
+            ax.plot([t_pd, t_pd], [0, 1], color='red', linestyle='--', linewidth=2)
+            for y in np.linspace(0, 1, 6):
+                ax.plot(t_pd, y, marker='^', color='red', markersize=7,
+                         label='Смена λ' if not red_labeled else "")
+                red_labeled = True
             red_labeled = True
 
     # Синие линии (CUSUM сигналы)
@@ -490,8 +497,8 @@ if __name__ == "__main__":
         ax.axvline(
             x=row['START_TIME'],
             color='blue',
-            linestyle='--',
-            linewidth=1,
+            linestyle=':',
+            linewidth=0.5,
             label='CUSUM' if not blue_labeled else None
         )
         blue_labeled = True
