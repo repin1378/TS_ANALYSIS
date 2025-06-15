@@ -211,15 +211,16 @@ if __name__ == "__main__":
             plt.figure(figsize=(6, 6))
             plt.plot(theoretical_cdf, empirical_cdf, 'o', label='P–P точки')
             plt.plot([0, 1], [0, 1], 'r--', label='Идеальное совпадение')
-            plt.xlabel('Теоретическая CDF (expon)')
-            plt.ylabel('Эмпирическая CDF')
+            plt.xlabel('Теоретическую функции распределения')
+            plt.ylabel('Эмпирическая данные')
             plt.title(f'P–P Plot (часть {i})')
             plt.legend()
             plt.grid(True)
             plt.axis('square')
-            plt.show()
-            file_path = os.path.join(pp_plot_dir, f'pp_plot_part_{i}.png')
+            #plt.show()
+            file_path = os.path.join(pp_plot_dir, f'pp_plot_part_{i}.pdf')
             plt.savefig(file_path)
+            plt.show()
             plt.close()
 
         except Exception as e:
@@ -227,15 +228,17 @@ if __name__ == "__main__":
 
 
     df_result = pd.DataFrame(results)
-    indices_to_multiply = [0, 2]
+    indices_to_multiply = [0]
     df_result.loc[indices_to_multiply, 'lambda_est'] *= 10
+    indices_to_multiply = [2]
+    df_result.loc[indices_to_multiply, 'lambda_est'] *= 5
     df_result.to_excel(exp_fit_results_path,index=True)
     print(df_result)
 
 #=================================Генерация Dataframe c экспоненциальном распределением====================================
 
     # Список сегментов: (кол-во событий, индекс строки в df_result)
-    segments = [(500, 1), (200, 0), (200, 1), (800, 0), (300, 1), (150, 2), (500, 1), (200, 0), (200, 1), (900, 2), (1000, 1)]
+    segments = [(500, 1), (3000, 0), (2000, 1), (7000, 2), (2000, 1), (5000, 0), (500, 1), (5000, 2), (1000, 1)]
 
     # Генерация
     df_gen = generate_segmented_exponential_dataset(df_result, segments, seed=None)
@@ -301,11 +304,12 @@ if __name__ == "__main__":
 
     # === Создание общей фигуры ===
     fig = plt.figure(figsize=(12, 8))
-    gs = fig.add_gridspec(2, 1, height_ratios=[3, 1])
+    gs = fig.add_gridspec(1, 1)
 
     # === График накопленного числа событий ===
     ax1 = fig.add_subplot(gs[0])
     ax1.plot(df_gen["START_TIME"], df_gen["INDEX"], label="Накопленное число событий")
+    ax1.set_xticklabels([])
 
     # Для легенды — флаги
     red_labeled = False
@@ -316,10 +320,10 @@ if __name__ == "__main__":
         lam_val = df_gen.loc[switch_idx, 'lambda_est']
         t_pd = pd.to_datetime(t)
         if lam_val != min_lambda:
-            ax1.plot([t_pd, t_pd], [0,1], color='red', linestyle='--', linewidth=3)
+            ax1.plot([t_pd, t_pd], [0,1], color='red', linestyle='--', linewidth=1)
             for y in np.linspace(0, 1,6):
                 ax1.plot(t_pd, y, marker='^', color='red', markersize=7,
-                         label='Смена λ' if not red_labeled else "")
+                         label='Изменение λ (начало разладки)' if not red_labeled else "")
                 red_labeled = True
             red_labeled = True
 
@@ -333,7 +337,7 @@ if __name__ == "__main__":
         lam_val = df_gen.loc[switch_idx, 'lambda_est']
         t_pd = pd.to_datetime(t)
         if lam_val == min_lambda:
-            ax1.plot([t_pd, t_pd], [0,1], color='green', linestyle='--', linewidth=3)
+            ax1.plot([t_pd, t_pd], [0,1], color='green', linestyle='--', linewidth=1)
             for y in np.linspace(0, 1, 5):
                 ax1.plot(t_pd, y, marker='v', color='green', markersize=7,
                          label='Возват λ к нормальному значению' if not green_labeled else "")
@@ -342,26 +346,26 @@ if __name__ == "__main__":
 
     # Оформление графика
     ax1.set_title("График накопленного числа событий")
-    ax1.set_xlabel("Время события")
+    ax1.set_xlabel("x, мин")
     ax1.set_ylabel("Нормированное значение")
     ax1.set_xlim(df_gen['START_TIME'].iloc[0], df_gen['START_TIME'].iloc[-1])
     ax1.set_ylim(0, 1)
     ax1.grid()
     ax1.legend()
 
-    # === Таблица смен λ ===
-    ax2 = fig.add_subplot(gs[1])
-    ax2.axis('off')
-    column_labels = ["Смена №", "Индекс", "Время", "λ"]
-    table = ax2.table(
-        cellText=table_data,
-        colLabels=column_labels,
-        loc='center',
-        cellLoc='center'
-    )
-    table.auto_set_font_size(False)
-    table.set_fontsize(9)
-    table.scale(1.1, 1.3)
+    # # === Таблица смен λ ===
+    # ax2 = fig.add_subplot(gs[1])
+    # ax2.axis('off')
+    # column_labels = ["Смена №", "Индекс", "Время", "λ"]
+    # table = ax2.table(
+    #     cellText=table_data,
+    #     colLabels=column_labels,
+    #     loc='center',
+    #     cellLoc='center'
+    # )
+    # table.auto_set_font_size(False)
+    # table.set_fontsize(9)
+    # table.scale(1.1, 1.3)
 
     # === Сохранение и показ ===
     plt.tight_layout()
@@ -466,6 +470,7 @@ if __name__ == "__main__":
     # === График накопленного числа событий ===
     ax = fig.add_subplot(gs[0])
     ax.plot(df_gen["START_TIME"], df_gen["INDEX"], label="Накопленное число событий")
+    ax.set_xticklabels([])
 
     # Флаги для отображения подписи в легенде только один раз
     red_labeled = False
@@ -488,7 +493,7 @@ if __name__ == "__main__":
             ax.plot([t_pd, t_pd], [0, 1], color='red', linestyle='--', linewidth=2)
             for y in np.linspace(0, 1, 6):
                 ax.plot(t_pd, y, marker='^', color='red', markersize=7,
-                         label='Смена λ' if not red_labeled else "")
+                         label='Изменение λ (начало разладки)' if not red_labeled else "")
                 red_labeled = True
             red_labeled = True
 
@@ -499,13 +504,13 @@ if __name__ == "__main__":
             color='blue',
             linestyle=':',
             linewidth=0.5,
-            label='CUSUM' if not blue_labeled else None
+            label='CUSUM. Сигнал о возникновении разладки' if not blue_labeled else None
         )
         blue_labeled = True
 
     # Оформление
     ax.set_title("График накопленного числа событий")
-    ax.set_xlabel("Время события")
+    ax.set_xlabel("x, мин")
     ax.set_ylabel("Нормированное значение")
     ax.set_xlim(df_gen['START_TIME'].iloc[0], df_gen['START_TIME'].iloc[-1])
     ax.set_ylim(0, 1)
