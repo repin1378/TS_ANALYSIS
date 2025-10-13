@@ -346,7 +346,7 @@ if __name__ == "__main__":
 
     # Оформление графика
     ax1.set_title("График накопленного числа событий")
-    ax1.set_xlabel("x, мин")
+    ax1.set_xlabel("t")
     ax1.set_ylabel("Нормированное значение")
     ax1.set_xlim(df_gen['START_TIME'].iloc[0], df_gen['START_TIME'].iloc[-1])
     ax1.set_ylim(0, 1)
@@ -510,7 +510,7 @@ if __name__ == "__main__":
 
     # Оформление
     ax.set_title("График накопленного числа событий")
-    ax.set_xlabel("x, мин")
+    ax.set_xlabel("t")
     ax.set_ylabel("Нормированное значение")
     ax.set_xlim(df_gen['START_TIME'].iloc[0], df_gen['START_TIME'].iloc[-1])
     ax.set_ylim(0, 1)
