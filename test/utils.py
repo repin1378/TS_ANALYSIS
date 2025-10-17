@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from datetime import timedelta
 import optuna
+from collections import deque
 
 def generate_segmented_exponential_dataset(df_result, segments, seed=None):
     """
@@ -147,6 +148,206 @@ def detect_cusum_changes(df_gen, lambda_0, k, h, min_gap=30):
     # Возвращаем сгруппированный DataFrame
     return pd.DataFrame(grouped_alerts)[['event_index', 'START_TIME', 'TIME_DIFF']]
 
+# ======================= GLR-CUSUM для экспоненты + утилиты ============================
+def estimate_lambda0_from_slice(df: pd.DataFrame,
+                                start: int | None = None,
+                                end: int | None = None,
+                                time_col: str | None = None,
+                                t0=None, t1=None,
+                                col: str = "TIME_DIFF") -> float:
+    """
+    Оценка λ0 (MLE) по указанному «нормальному» промежутку.
+    Можно дать индексный срез [start:end) или по времени [t0, t1] и колонке time_col.
+    """
+    if time_col and (t0 is not None or t1 is not None):
+        m = df
+        if t0 is not None: m = m[m[time_col] >= pd.to_datetime(t0)]
+        if t1 is not None: m = m[m[time_col] <= pd.to_datetime(t1)]
+        x = m[col].to_numpy()
+    else:
+        s = 0 if start is None else start
+        e = len(df) if end is None else end
+        x = df[col].iloc[s:e].to_numpy()
+
+    x = x[np.isfinite(x)]
+    x = x[x > 0]
+    if len(x) < 5:
+        raise ValueError("Слишком короткий нормальный интервал для оценки λ0.")
+    mu0 = float(np.mean(x))
+    return 1.0 / mu0
+
+
+def glr_cusum_exp(df: pd.DataFrame,
+                  col: str = "TIME_DIFF",
+                  lambda0_init: float = 1.0,
+                  W: int = 1000,
+                  baseline_window: int = 500,
+                  freeze_after: int = 500,
+                  h: float = 6.0):
+    """
+    GLR-CUSUM для X~Exp(λ), λ0 неизвестно: поддерживаем λ0 по скользящему окну baseline_window.
+    Статистика G_t = max_{t-W<=k<=t} LLR_{k:t}, где LLR_{k:t} = n log(n/(λ0 * sumX)) - n + λ0*sumX.
+    При G_t >= h -> тревога; после тревоги замораживаем обновление λ0 на freeze_after шагов.
+
+    Возвращает df с колонками: GLR_stat, CUSUM_signal, lambda0_used.
+    """
+    x = df[col].to_numpy()
+    n = len(x)
+
+    # префиксные суммы для быстрых LLR
+    Sx = np.zeros(n + 1)
+    for i in range(1, n + 1):
+        Sx[i] = Sx[i - 1] + x[i - 1]
+
+    lam0 = float(lambda0_init)
+    buf = deque(maxlen=baseline_window)
+    frozen = 0
+
+    G = np.zeros(n)
+    alarm = np.zeros(n, dtype=bool)
+    lam_used = np.zeros(n)
+
+    for t in range(n):
+        xi = x[t]
+        # обновление λ0 (если не заморожено)
+        if frozen == 0 and xi > 0:
+            buf.append(xi)
+            if len(buf) == baseline_window:
+                lam0 = 1.0 / (sum(buf) / len(buf))
+
+        lam_used[t] = lam0
+
+        t1 = t + 1
+        k_min = max(1, t1 - W)
+        best = 0.0
+        # сканируем возможные точки начала на последнем окне W
+        for k in range(k_min, t1 + 1):
+            nseg = t1 - (k - 1)
+            sumx = Sx[t1] - Sx[k - 1]
+            if sumx <= 0:
+                continue
+            lam_hat = nseg / sumx
+            llr = nseg * (np.log(lam_hat) - np.log(lam0)) - (lam_hat - lam0) * sumx
+            if llr > best:
+                best = llr
+        G[t] = max(0.0, best)
+
+        if G[t] >= h:
+            alarm[t] = True
+            frozen = freeze_after  # «заморозка» λ0
+        else:
+            if frozen > 0:
+                frozen -= 1
+
+    out = df.copy()
+    out["GLR_stat"] = G
+    out["CUSUM_signal"] = alarm
+    out["lambda0_used"] = lam_used
+    return out
+
+def group_signals(df_cusum: pd.DataFrame, min_gap: int = 30):
+    """
+    Оставляет только первые сработки с шагом не чаще min_gap.
+    Ожидает булев столбец 'CUSUM_signal' и индексы по времени/событиям.
+    """
+    sig = df_cusum[df_cusum["CUSUM_signal"]].reset_index().rename(columns={'index': 'event_index'})
+    groups = []
+    last = -10**9
+    for _, r in sig.iterrows():
+        if r["event_index"] - last >= min_gap:
+            groups.append(r)
+            last = r["event_index"]
+    cols = ["event_index"]
+    if "START_TIME" in df_cusum.columns:
+        cols.append("START_TIME")
+    if "TIME_DIFF" in df_cusum.columns:
+        cols.append("TIME_DIFF")
+    return pd.DataFrame(groups)[cols]
+
+
+def autotune_h_glr(target_arl0: int,
+                   lambda0: float,
+                   W: int = 1000,
+                   baseline_window: int = 500,
+                   reps: int = 800,
+                   n_max: int = 50_000,
+                   tol: float = 0.15,
+                   seed: int | None = 42) -> float:
+    """
+    Подбор порога h для GLR-CUSUM под целевую ARL0 быстрым MC и бинарным поиском.
+    Возвращает h, у которого эмпирическая ARL0 в пределах ±tol от цели.
+
+    Примечание: симулируем X~Exp(lambda0), обновляем λ0 как и в glr_cusum_exp (baseline_window),
+    но без «заморозки» (fire редко при H0).
+    """
+    rng = np.random.default_rng(seed)
+
+    def estimate_arl0(h_val: float) -> float:
+        arls = []
+        for _ in range(reps):
+            # генерим поток под H0 (λ = lambda0)
+            x = rng.exponential(scale=1.0 / lambda0, size=n_max)
+            # быстрая оценка ARL0 на одной трассе
+            # реализуем укороченный glr-процесс «на лету»
+            Sx = 0.0
+            buf = deque(maxlen=baseline_window)
+            lam0_used = lambda0
+            G = 0.0
+            fired_at = n_max
+            # для ускорения делаем инкрементальные префиксные суммы на окне W
+            # храним последние W сумм для перебора k
+            from collections import deque as dq
+            last_x = dq(maxlen=W)
+            pref = dq(maxlen=W + 1)
+            pref.append(0.0)
+
+            for t in range(n_max):
+                xi = x[t]
+                if xi > 0:
+                    buf.append(xi)
+                    if len(buf) == baseline_window:
+                        lam0_used = 1.0 / (sum(buf) / len(buf))
+
+                # обновляем окно и префиксные суммы
+                last_x.append(xi)
+                pref.append(pref[-1] + xi)
+                # сканируем по отрезку окна
+                best = 0.0
+                m = len(last_x)
+                for nseg in range(1, m + 1):
+                    sumx = pref[-1] - pref[-1 - nseg]
+                    if sumx <= 0:
+                        continue
+                    lam_hat = nseg / sumx
+                    llr = nseg * (np.log(lam_hat) - np.log(lam0_used)) - (lam_hat - lam0_used) * sumx
+                    if llr > best:
+                        best = llr
+                G = max(0.0, best)
+                if G >= h_val:
+                    fired_at = t + 1
+                    break
+            arls.append(fired_at)
+        return float(np.mean(arls))
+
+    # грубые границы поиска
+    lo, hi = 1.0, 20.0
+    # расширим hi, если ARL0 слишком маленькая
+    while estimate_arl0(hi) < target_arl0 * (1 - tol):
+        hi *= 1.5
+        if hi > 200:
+            break
+
+    # бинарный поиск
+    for _ in range(12):
+        mid = 0.5 * (lo + hi)
+        arl = estimate_arl0(mid)
+        if arl < target_arl0 * (1 - tol):
+            lo = mid  # мало — увеличиваем порог
+        elif arl > target_arl0 * (1 + tol):
+            hi = mid  # много — уменьшаем порог
+        else:
+            return mid
+    return 0.5 * (lo + hi)
 
 
 
