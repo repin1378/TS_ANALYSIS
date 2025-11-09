@@ -22,3 +22,4 @@
 
 Результаты работы программы выложил на Google Диск - https://drive.google.com/drive/folders/16KjnZWPh3_6PyzjFAvyznzVnH5KPV2NW
 Исходный код опубликовал в репозитории GitHub - https://github.com/repin1378/TS_ANALYSIS# (исполняемый файл для запуска программы  - test/main.py).
+new
