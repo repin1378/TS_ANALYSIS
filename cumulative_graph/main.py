@@ -20,7 +20,7 @@ import matplotlib.dates as mdates
 # Example usage
 if __name__ == "__main__":
 
-    value = '3'
+    value = '1'
     department_name = 'CSH'
     output_file_path = '../results/CSH/2024/3_category/results.txt'
     output_df_file_path = '../results/CSH/2024/3_category/df.csv'

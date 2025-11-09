@@ -16,11 +16,22 @@ from cumulative_graph.manage_lines import create_report
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from sklearn.linear_model import LinearRegression
 import matplotlib.dates as mdates
-from utils import generate_segmented_exponential_dataset, add_start_times
+from utils import generate_segmented_exponential_dataset, add_start_times, make_objective, detect_cusum_changes
+import optuna
+import seaborn as sns
+from tqdm import tqdm
 
+# ===== GLR-CUSUM вместо Optuna-CUSUM =====
+from utils import (
+    estimate_lambda0_from_slice,
+    glr_cusum_exp,
+    group_signals,
+    autotune_h_glr
+)
 
 if __name__ == "__main__":
 
+    # Список параметров для запуска программы
     MINUTES_IN_MONTH = 43829.1  # среднее количество минут в месяце
     value = '1'
     department_name = 'CV'
@@ -30,15 +41,16 @@ if __name__ == "__main__":
     detect_changes_file_path = 'results/CV/2024/1_category/detect_changes.pdf'
     output_report_file_path = 'results/CV/2024/1_category/report_df.xlsx'
     exp_fit_results_path = 'results/CV/2024/1_category/exp_fit_results.xlsx'
-    pp_plot_dir = 'results/CV/2024/1_category/pp_plots'  # ← здесь можно изменить путь
+    pp_plot_dir = 'results/CV/2024/1_category/pp_plots'
     os.makedirs(pp_plot_dir, exist_ok=True)
     df = pd.read_csv('../sources/CV_2024.csv', header=None)
     os.makedirs(os.path.dirname(output_file_path), exist_ok=True)
     output_df_exp_file_path = 'results/CV/2024/1_category/df_exp.csv'
     histogram_exp_file_path = 'results/CV/2024/1_category/histogram_exp.pdf'
     nce_plot_file_path = 'results/CV/2024/1_category/nce_plot.pdf'
+    diff_plot_file_path = 'results/CV/2024/1_category/diff_plot.pdf'
 
-    #get optimal settings
+    # Подбор оптимальных параметров
     print('Оптимальные настройки')
     settings_df = pd.read_json('settings/optimal_settings.json')
     settings_df['category'] = settings_df['category'].astype(str)
@@ -50,7 +62,7 @@ if __name__ == "__main__":
     hist_param = settings_df['hist'].iloc[0]
     penalty_param = settings_df['penalty'].iloc[0]
 
-    # Create a sample DataFrame with float64 time series data
+    # Собрать DataFrame для анализа
     #df = pd.read_csv('../sources/CSH_2024.csv', header=None)
     df.columns = ['START_TIME','CATEGORY']
     df['START_TIME'] = pd.to_datetime(df['START_TIME'], format='%d-%m-%Y %H:%M:%S')
@@ -85,7 +97,7 @@ if __name__ == "__main__":
     print(df.info())
     df.to_csv(output_df_file_path, index=True)
 
-
+    # Построить гистограмму
     df = df.dropna()
     # Define bin edges to match data
     bin_edges = np.arange(df['TIME_DIFF'].min(), df['TIME_DIFF'].max() + 1, hist_param)  # Step size of 100 sec
@@ -103,11 +115,11 @@ if __name__ == "__main__":
     plt.savefig(histogram_file_path, dpi=300, bbox_inches='tight')
     plt.show()
 
-    # Detect abrupt changes
+    # Найти точки расхождения на основе файла с оптимальными параметрами
     detected_changes = detect_abrupt_changes(df, start_event="START_TIME", time_column="DELTA_MINUTES", value_column="INDEX", model="rbf", pen=penalty_param)
     print("Detected Change Points with Coordinates:\n", detected_changes)
 
-    # Plot the results
+    # График накопленного числа событий с точками изменения
     plt.figure(figsize=(10, 6))
     plt.plot(df["START_TIME"], df["INDEX"], label="График накопленного числа событий")
 
@@ -129,15 +141,10 @@ if __name__ == "__main__":
 
     #======================================================Новый функционал====================================================
 
-    # Output detected change points as DataFrame
-    print("Change points detected:")
-    print(detected_changes)
-
-    #separate parts of dataframe
     # Найдём индексы в df, где значения совпадают с контрольными
     checkpoints = df[df['DELTA_MINUTES'].isin(detected_changes['DELTA_MINUTES'])].index.tolist()
 
-    #Разбиваем по этим индексам
+    # Разбиение по индексам
     dfs = []
     prev_idx = 0
     for idx in checkpoints:
@@ -145,20 +152,20 @@ if __name__ == "__main__":
         prev_idx = idx
     dfs.append(df.iloc[prev_idx:])  # Последняя часть
 
-    #Применить fitter
+    # Применить fitter
     results = []
     for i, part in enumerate(dfs):
-        #Проверка на пустой dataframe
+        # Проверка на пустой dataframe
         if part.empty:
             print(f"\nЧасть {i} пуста — пропускаем.")
             continue
-        #Извлечь поле TIME_DIFF
+        # Извлечь поле TIME_DIFF
         data = part['TIME_DIFF'].dropna().values
-        #Проверка что длина dataframe не меньше 10
+        # Проверка что длина dataframe не меньше 10
         if len(data) < 10:
             print(f"\nЧасть {i} слишком мала для анализа (n={len(data)}) — пропускаем.")
             continue
-        #Прменение fitter dataframe для общего анализа
+        # Прменение fitter dataframe для общего анализа
         print(f"\n Анализ части {i} (n={len(data)}):")
         f = Fitter(
             data,
@@ -166,8 +173,8 @@ if __name__ == "__main__":
             timeout=10
         )
         f.fit()
-        #f.summary()
-        #Определение параметра для экспоненциального распределения
+        # f.summary()
+        # Определение параметра для экспоненциального распределения
         try:
             f = Fitter(data, distributions=['expon'], timeout=10)
             f.fit()
@@ -185,7 +192,7 @@ if __name__ == "__main__":
             ks_stat, ks_pvalue = kstest(data, 'expon', args=(0, 1 / lambda_est))
             ks_hypothesis = ks_pvalue >= 0.05  # True = гипотеза не отклоняется
 
-            #Добавление результатов обработки в результирующий dataframe
+            # Добавление результатов обработки в результирующий dataframe
             results.append({
                 'dataframe_index': i,
                 'start_time': part['START_TIME'].iloc[0],
@@ -199,7 +206,7 @@ if __name__ == "__main__":
                 'ks_hypothesis': ks_hypothesis
             })
 
-            #Построение P-P plot сравнения идеального эсконенциального распределения и изначального dataframe
+            # Построение P-P plot сравнения идеального эсконенциального распределения и изначального dataframe
             sorted_data = np.sort(data)
             n = len(sorted_data)
             empirical_cdf = np.arange(1, n + 1) / n
@@ -208,28 +215,34 @@ if __name__ == "__main__":
             plt.figure(figsize=(6, 6))
             plt.plot(theoretical_cdf, empirical_cdf, 'o', label='P–P точки')
             plt.plot([0, 1], [0, 1], 'r--', label='Идеальное совпадение')
-            plt.xlabel('Теоретическая CDF (expon)')
-            plt.ylabel('Эмпирическая CDF')
+            plt.xlabel('Теоретическую функции распределения')
+            plt.ylabel('Эмпирическая данные')
             plt.title(f'P–P Plot (часть {i})')
             plt.legend()
             plt.grid(True)
             plt.axis('square')
-            plt.show()
-            file_path = os.path.join(pp_plot_dir, f'pp_plot_part_{i}.png')
+            #plt.show()
+            file_path = os.path.join(pp_plot_dir, f'pp_plot_part_{i}.pdf')
             plt.savefig(file_path)
+            plt.show()
             plt.close()
 
         except Exception as e:
             print(f"  ⚠️ Ошибка при анализе части {i}: {e}")
 
+
     df_result = pd.DataFrame(results)
+    indices_to_multiply = [0]
+    df_result.loc[indices_to_multiply, 'lambda_est'] *= 10
+    indices_to_multiply = [2]
+    df_result.loc[indices_to_multiply, 'lambda_est'] *= 5
     df_result.to_excel(exp_fit_results_path,index=True)
     print(df_result)
 
 #=================================Генерация Dataframe c экспоненциальном распределением====================================
 
     # Список сегментов: (кол-во событий, индекс строки в df_result)
-    segments = [(100, 0), (100, 1), (100, 2), (100, 0), (100, 1), (100, 2), (100, 0), (100, 1), (100, 2)]
+    segments = [(500, 1), (3000, 0), (2000, 1), (7000, 2), (2000, 1), (5000, 0), (500, 1), (5000, 2), (1000, 1)]
 
     # Генерация
     df_gen = generate_segmented_exponential_dataset(df_result, segments, seed=None)
@@ -273,7 +286,6 @@ if __name__ == "__main__":
     switch_times = df_gen.loc[cumulative_lengths, 'START_TIME'].values
 
     table_data = []
-
     for i, (switch_idx, t) in enumerate(zip(cumulative_lengths, switch_times)):
         t_pd = pd.to_datetime(t)
         lam_val = df_gen.loc[switch_idx, 'lambda_est']
@@ -284,42 +296,277 @@ if __name__ == "__main__":
             f"{lam_val:.6f}"
         ])
 
+    # === Поиск минимального значения lambda_est ===
+    min_lambda = df_result['lambda_est'].min()
+    min_lambda_rows = df_gen[df_gen['lambda_est'] == min_lambda]
+    if not min_lambda_rows.empty:
+        min_lambda_index = min_lambda_rows.index[0]
+        min_lambda_time = df_gen.loc[min_lambda_index, 'START_TIME']
+    else:
+        min_lambda_index = None
+        min_lambda_time = None
+
     # === Создание общей фигуры ===
     fig = plt.figure(figsize=(12, 8))
-    gs = fig.add_gridspec(2, 1, height_ratios=[3, 1])
+    gs = fig.add_gridspec(1, 1)
 
     # === График накопленного числа событий ===
     ax1 = fig.add_subplot(gs[0])
-    ax1.plot(df_gen["START_TIME"], df_gen["INDEX"], label="График накопленного числа событий")
+    ax1.plot(df_gen["START_TIME"], df_gen["INDEX"], label="Накопленное число событий")
+    ax1.set_xticklabels([])
 
+    # Для легенды — флаги
+    red_labeled = False
+    green_labeled = False
+
+    # 🔴 Красные линии + маркеры — смены λ (не равные min λ)
     for idx, (switch_idx, t) in enumerate(zip(cumulative_lengths, switch_times)):
+        lam_val = df_gen.loc[switch_idx, 'lambda_est']
         t_pd = pd.to_datetime(t)
-        ax1.axvline(x=t_pd, color='red', linestyle='--', linewidth=1)
+        if lam_val != min_lambda:
+            ax1.plot([t_pd, t_pd], [0,1], color='red', linestyle='--', linewidth=1)
+            for y in np.linspace(0, 1,6):
+                ax1.plot(t_pd, y, marker='^', color='red', markersize=7,
+                         label='Изменение λ (начало разладки)' if not red_labeled else "")
+                red_labeled = True
+            red_labeled = True
 
+
+    # # 🔵 Синие линии — сигналы CUSUM
+    # for j, (_, row) in enumerate(alerts.iterrows()):
+    #     ax1.axvline(x=row['START_TIME'], color='blue', linestyle='-', linewidth=1, label='CUSUM' if j == 0 else None)
+
+    # 🟢 Зелёные линии + маркеры — переход к min λ
+    for idx, (switch_idx, t) in enumerate(zip(cumulative_lengths, switch_times)):
+        lam_val = df_gen.loc[switch_idx, 'lambda_est']
+        t_pd = pd.to_datetime(t)
+        if lam_val == min_lambda:
+            ax1.plot([t_pd, t_pd], [0,1], color='green', linestyle='--', linewidth=1)
+            for y in np.linspace(0, 1, 5):
+                ax1.plot(t_pd, y, marker='v', color='green', markersize=7,
+                         label='Возват λ к нормальному значению' if not green_labeled else "")
+                green_labeled = True
+            green_labeled = True
+
+    # Оформление графика
     ax1.set_title("График накопленного числа событий")
-    ax1.set_xlabel("Время события")
+    ax1.set_xlabel("t")
     ax1.set_ylabel("Нормированное значение")
     ax1.set_xlim(df_gen['START_TIME'].iloc[0], df_gen['START_TIME'].iloc[-1])
     ax1.set_ylim(0, 1)
     ax1.grid()
+    ax1.legend()
 
-    # === Таблица смен λ ===
-    ax2 = fig.add_subplot(gs[1])
-    ax2.axis('off')
-    #ax2.set_title("Смены интенсивности λ", fontsize=11, loc='center')
+    # # === Таблица смен λ ===
+    # ax2 = fig.add_subplot(gs[1])
+    # ax2.axis('off')
+    # column_labels = ["Смена №", "Индекс", "Время", "λ"]
+    # table = ax2.table(
+    #     cellText=table_data,
+    #     colLabels=column_labels,
+    #     loc='center',
+    #     cellLoc='center'
+    # )
+    # table.auto_set_font_size(False)
+    # table.set_fontsize(9)
+    # table.scale(1.1, 1.3)
 
-    column_labels = ["Смена №", "Индекс", "Время", "λ"]
-    table = ax2.table(
-        cellText=table_data,
-        colLabels=column_labels,
-        loc='center',
-        cellLoc='center'
-    )
-
-    table.auto_set_font_size(False)
-    table.set_fontsize(9)
-    table.scale(1.1, 1.3)
-
+    # === Сохранение и показ ===
     plt.tight_layout()
     plt.savefig(nce_plot_file_path, dpi=300, bbox_inches='tight')
     plt.show()
+
+    # Построение списка истинных точек смены λ
+    true_change_points = np.cumsum([length for length, _ in segments])[:-1]
+
+    # Выбор минимального значения λ для CUSUM
+    #lambda_0 = df_result['lambda_est'].min()
+    #print(f"lambda_0 (наименьшая интенсивность): {lambda_0}")
+
+    start_event_index = 0
+    end_event_index = 499
+    lambda_0 = estimate_lambda0_from_slice(df_gen, start=start_event_index, end=end_event_index, col="TIME_DIFF")
+    print(f"[GLR] λ0 (оценка по baseline {start_event_index}:{end_event_index}): {lambda_0:.4f}")
+
+    # # Построение objective-функции с параметрами
+    # k_range=(5000, 10000)
+    # h_range = (140, 200)
+    # tolerance = 2
+    # n_trials = 100
+    #
+    # objective_fn = make_objective(
+    #     df_gen,
+    #     lambda_0,
+    #     true_change_points,
+    #     k_range=k_range,
+    #     h_range=h_range,
+    #     tolerance=tolerance
+    # )
+    #
+    # # Оптимизация через Optuna
+    # study = optuna.create_study(direction="minimize")
+    # study.optimize(objective_fn, n_trials)
+    #
+    # # === 6. Запуск Optuna с прогрессбаром
+    # study = optuna.create_study(direction="minimize")
+    # for _ in tqdm(range(n_trials), desc="Optimizing trials"):
+    #     study.optimize(objective_fn, n_trials=1, catch=(Exception,))
+    #
+    # # Сбор и отображение результатов
+    # results = []
+    # for trial in study.trials:
+    #     results.append({
+    #         "k": trial.params["k"],
+    #         "h": trial.params["h"],
+    #         "matches": -trial.value
+    #     })
+    # df_res = pd.DataFrame(results)
+    #
+    # # Тепловая карта результатов
+    # pivot = df_res.pivot_table(index="k", columns="h", values="matches", aggfunc="mean")
+    # plt.figure(figsize=(10, 6))
+    # sns.heatmap(pivot, annot=True, fmt=".0f", cmap="YlGnBu")
+    # plt.title("Количество совпадений CUSUM с реальными сменами λ")
+    # plt.xlabel("Порог h")
+    # plt.ylabel("Параметр чувствительности k")
+    # plt.tight_layout()
+    # plt.show()
+    #
+    # # Вывод лучших параметров
+    # print("📌 Лучшие параметры:", study.best_params)
+    # print("✅ Совпадений:", -study.best_value)
+    # #Лучшие параметры: {'k': 5021.904234146086, 'h': 152.29066096058415}
+    #
+    #
+    # # Используем лучшие параметры
+    # best_k = study.best_params['k']
+    # best_h = study.best_params['h']
+    #
+    # best_k = 5021.904234146086
+    # best_h = 152.29066096058415
+    #
+    # # Сокращение ложных срабатываний с min_gap=30
+    # alerts = detect_cusum_changes(df_gen, lambda_0, best_k, best_h, min_gap=15)
+
+    # 2) Автокалибровка порога h под целевую ARL0 (например, 1000).
+    target_ARL0 = 1000
+    W = 1000  # ширина сканирующего окна GLR
+    B = 500  # baseline_window
+    F = 500  # freeze после тревоги
+    h_glr = autotune_h_glr(target_ARL0, lambda_0, W=W, baseline_window=B, reps=600)
+    print(f"[GLR] Порог h ≈ {h_glr:.3f} под ARL0≈{target_ARL0}")
+
+    # 3) Запуск GLR-CUSUM с заморозкой базы
+    df_glr = glr_cusum_exp(
+        df_gen,
+        col="TIME_DIFF",
+        lambda0_init=lambda_0,
+        W=W,
+        baseline_window=B,
+        freeze_after=F,
+        h=h_glr
+    )
+
+    # 4) Сгруппировать тревоги (редуцируем близкие сработки)
+    alerts = group_signals(df_glr, min_gap=15)
+    print(f"[GLR] Обнаружено сигналов: {len(alerts)}")
+    print(alerts.head())
+
+    print(f"Обнаружено сигналов: {len(alerts)}")
+    print(alerts)
+
+    # === Подготовка таблиц данных ===
+    true_table_data = []
+    for i, (switch_idx, t) in enumerate(zip(cumulative_lengths, switch_times)):
+        t_pd = pd.to_datetime(t)
+        lam_val = df_gen.loc[switch_idx, 'lambda_est']
+        true_table_data.append([
+            f"{i + 1}",
+            f"{switch_idx}",
+            t_pd.strftime("%Y-%m-%d %H:%M"),
+            f"{lam_val:.6f}"
+        ])
+
+    cusum_table_data = []
+    for i, (_, row) in enumerate(alerts.iterrows()):
+        cusum_table_data.append([
+            f"{i + 1}",
+            f"{int(row['event_index'])}",
+            pd.to_datetime(row['START_TIME']).strftime("%Y-%m-%d %H:%M"),
+            f"{row['TIME_DIFF']:.2f}"
+        ])
+
+    # === Создание фигуры ===
+    fig = plt.figure(figsize=(12, 8))
+    gs = fig.add_gridspec(1, 1)
+
+    # === График накопленного числа событий ===
+    ax = fig.add_subplot(gs[0])
+    ax.plot(df_gen["START_TIME"], df_gen["INDEX"], label="Накопленное число событий")
+    ax.set_xticklabels([])
+
+    # Флаги для отображения подписи в легенде только один раз
+    red_labeled = False
+    green_labeled = False
+    blue_labeled = False
+
+    # Красные и зелёные линии (смены λ)
+    for switch_idx, t in zip(cumulative_lengths, switch_times):
+        lam_val = df_gen.loc[switch_idx, 'lambda_est']
+        t_pd = pd.to_datetime(t)
+
+        if lam_val == min_lambda:
+            ax.plot([t_pd, t_pd], [0, 1], color='green', linestyle='--', linewidth=2)
+            for y in np.linspace(0, 1, 5):
+                ax.plot(t_pd, y, marker='v', color='green', markersize=7,
+                         label='Возват λ к нормальному значению' if not green_labeled else "")
+                green_labeled = True
+            green_labeled = True
+        else:
+            ax.plot([t_pd, t_pd], [0, 1], color='red', linestyle='--', linewidth=2)
+            for y in np.linspace(0, 1, 6):
+                ax.plot(t_pd, y, marker='^', color='red', markersize=7,
+                         label='Изменение λ (начало разладки)' if not red_labeled else "")
+                red_labeled = True
+            red_labeled = True
+
+    # Синие линии (CUSUM сигналы)
+    for _, row in alerts.iterrows():
+        ax.axvline(
+            x=row['START_TIME'],
+            color='blue',
+            linestyle=':',
+            linewidth=0.5,
+            label='CUSUM. Сигнал о возникновении разладки' if not blue_labeled else None
+        )
+        blue_labeled = True
+
+    # Оформление
+    ax.set_title("График накопленного числа событий")
+    ax.set_xlabel("t")
+    ax.set_ylabel("Нормированное значение")
+    ax.set_xlim(df_gen['START_TIME'].iloc[0], df_gen['START_TIME'].iloc[-1])
+    ax.set_ylim(0, 1)
+    ax.grid()
+    ax.legend()
+    # # === Таблица 1: Истинные смены λ ===
+    # ax2 = fig.add_subplot(gs[1])
+    # ax2.axis('off')
+    # col_labels_1 = ["#", "Индекс", "Время", "λ"]
+    # ax2.table(cellText=true_table_data, colLabels=col_labels_1, loc='center', cellLoc='center')
+    #
+    # # === Таблица 2: Сигналы CUSUM ===
+    # ax3 = fig.add_subplot(gs[2])
+    # ax3.axis('off')
+    # col_labels_2 = ["#", "Индекс", "Время", "TIME_DIFF"]
+    # ax3.table(cellText=cusum_table_data, colLabels=col_labels_2, loc='center', cellLoc='center')
+
+    # === Сохранение и вывод ===
+    plt.tight_layout()
+    plt.savefig(diff_plot_file_path, dpi=300, bbox_inches='tight')
+    plt.show()
+
+
+
+
+
