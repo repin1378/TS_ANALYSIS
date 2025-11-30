@@ -50,33 +50,70 @@ def preprocess_dataframe(csv_file: Path, save_dir: Path = None):
 # ============================================================
 # 2) Гистограмма TIME_DIFF
 # ============================================================
-def save_histogram(df: pd.DataFrame, graph_dir: Path, file_name: str,
-                   hist_step: float = 10):
+def save_histogram(df: pd.DataFrame, graph_dir: Path, file_name: str):
     """
     Строит гистограмму TIME_DIFF начиная с 0.
+    DPI и hist_step подбираются автоматически под размер выборки.
     """
 
     graph_dir.mkdir(parents=True, exist_ok=True)
     out_path = graph_dir / f"{file_name}.pdf"
 
-    # Ось X начинает с 0
-    xmin = 0
-    xmax = df["TIME_DIFF"].max()
-    xmax = ((xmax // hist_step) + 1) * hist_step
+    n = len(df)
+    tmax = df["TIME_DIFF"].max()
 
+    # ---------------------------
+    # 1) Автоматический выбор DPI
+    # ---------------------------
+    if n < 500:
+        dpi = 150
+    elif n < 5000:
+        dpi = 200
+    elif n < 50000:
+        dpi = 300
+    else:
+        dpi = 400
+
+    # ---------------------------
+    # 2) Автоматический выбор hist_step
+    # ---------------------------
+    if n < 500:
+        hist_step = max(2, tmax / 20)     # 20 бинов
+    elif n < 5000:
+        hist_step = max(1, tmax / 40)     # 40 бинов
+    elif n < 50000:
+        hist_step = max(0.5, tmax / 60)   # 60 бинов
+    else:
+        hist_step = max(0.25, tmax / 80)  # 80 бинов
+
+    # округляем шаг до красивого числа
+    if hist_step > 10:
+        hist_step = round(hist_step, -1)   # десятки
+    elif hist_step > 1:
+        hist_step = round(hist_step, 1)    # десятые
+    else:
+        hist_step = round(hist_step, 2)    # сотые
+
+    print(f"📌 Автонастройка: n={n}, max={tmax:.2f}, hist_step={hist_step}, dpi={dpi}")
+
+    # --------- Бины -----------
+    xmin = 0
+    xmax = ((tmax // hist_step) + 1) * hist_step
     bin_edges = np.arange(xmin, xmax + hist_step, hist_step)
 
-    plt.figure(figsize=(8, 5))
+    # --------- Построение ---------
+    plt.figure(figsize=(10, 5))
     plt.hist(df["TIME_DIFF"], bins=bin_edges,
              edgecolor='black', alpha=0.7)
 
     plt.xlabel("Интервалы между событиями (мин)")
     plt.ylabel("Частота")
-    plt.title("Гистограмма")
+    plt.title(f"Гистограмма TIME_DIFF — {file_name}")
     plt.grid(axis='y', linestyle='--', alpha=0.6)
     plt.xlim(xmin, xmax)
 
-    plt.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=dpi, bbox_inches="tight")
     plt.close()
 
     print(f"📊 Гистограмма сохранена: {out_path}")
@@ -91,7 +128,8 @@ def plot_cumulative_events(df: pd.DataFrame, graph_dir: Path, file_name: str):
     """
     Строит график накопленного числа событий:
         - INDEX по START_TIME
-        - вертиковые пунктирные линии по кварталам
+        - вертикальные квартальные линии
+        - вертикальные линии по сезонам (метеорологические)
     """
 
     graph_dir.mkdir(parents=True, exist_ok=True)
@@ -99,23 +137,19 @@ def plot_cumulative_events(df: pd.DataFrame, graph_dir: Path, file_name: str):
 
     plt.figure(figsize=(12, 6))
 
-    # === 1. Сам график накопленного числа событий ===
+    # === 1. График INDEX ===
     plt.plot(df["START_TIME"], df["INDEX"],
              linewidth=2, color="black",
              label="Накопленное число событий")
 
-    # === 2. Добавляем линии по кварталам ===
-    start = df["START_TIME"].min()
-    end = df["START_TIME"].max()
+    # === 2. Диапазон времени ===
+    start = df["START_TIME"].min().normalize()
+    end = df["START_TIME"].max().normalize()
 
-    # Строим квартальные границы между минимальным и максимальным временем
-    quarter_starts = pd.date_range(
-        start=start.normalize(),
-        end=end.normalize(),
-        freq="QS"   # Quarter Start
-    )
+    # === 3. Квартальные границы ===
+    quarter_starts = pd.date_range(start=start, end=end, freq="QS")
 
-    for q in quarter_starts:
+    for i, q in enumerate(quarter_starts):
         if start <= q <= end:
             plt.axvline(
                 q,
@@ -123,23 +157,52 @@ def plot_cumulative_events(df: pd.DataFrame, graph_dir: Path, file_name: str):
                 color="gray",
                 linewidth=1.2,
                 alpha=0.7,
-                label="Квартальная граница" if q == quarter_starts[0] else None
+                label="Квартальная граница" if i == 0 else None
             )
 
-    # === 3. Настройки графика ===
-    plt.title("График накопленного числа событий", fontsize=14)
-    plt.xlabel("Время событий", fontsize=12)
-    plt.ylabel("Нормированное значение INDEX", fontsize=12)
+    # === 4. Сезоны (Весна, Лето, Осень, Зима) ===
+    # Метеорологические сезоны:
+    # Весна: 1 марта
+    # Лето: 1 июня
+    # Осень: 1 сентября
+    # Зима: 1 декабря
 
+    season_offsets = [(3, 1), (6, 1), (9, 1), (12, 1)]  # (month, day)
+    season_names = ["Весна", "Лето", "Осень", "Зима"]
+
+    # строим для всех лет, попадающих в диапазон дат
+    years = range(start.year, end.year + 1)
+
+    season_lines = []
+    for year in years:
+        for (month, day), name in zip(season_offsets, season_names):
+            season_date = pd.Timestamp(year=year, month=month, day=day)
+            if start <= season_date <= end:
+                season_lines.append((season_date, name))
+
+    for i, (d, name) in enumerate(season_lines):
+        plt.axvline(
+            d,
+            linestyle=":",
+            color="tab:blue",
+            linewidth=1.4,
+            alpha=0.8,
+            label="Сезон" if i == 0 else None
+        )
+
+    # === 5. Настройки ===
+    plt.title("График накопленного числа событий", fontsize=14)
+    plt.xlabel("Время", fontsize=12)
+    plt.ylabel("Нормированный индекс событий", fontsize=12)
     plt.grid(alpha=0.4)
     plt.ylim(0, 1)
 
-    # Легенда уникализируется автоматически
+    # Убираем дубликаты в легенде
     handles, labels = plt.gca().get_legend_handles_labels()
     by_label = dict(zip(labels, handles))
     plt.legend(by_label.values(), by_label.keys())
 
-    # === 4. Сохранение графика ===
+    # === 6. Сохранение ===
     plt.tight_layout()
     plt.savefig(out_path, dpi=300, bbox_inches="tight")
     plt.close()
