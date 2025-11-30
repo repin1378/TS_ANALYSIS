@@ -127,9 +127,11 @@ def save_histogram(df: pd.DataFrame, graph_dir: Path, file_name: str):
 def plot_cumulative_events(df: pd.DataFrame, graph_dir: Path, file_name: str):
     """
     Строит график накопленного числа событий:
-        - INDEX по START_TIME
-        - вертикальные квартальные линии
-        - вертикальные линии по сезонам (метеорологические)
+      - INDEX по START_TIME
+      - квартальные линии
+      - сезонные линии
+      - горизонтальная линия y=1
+      - обрезка графика по последнему событию
     """
 
     graph_dir.mkdir(parents=True, exist_ok=True)
@@ -138,15 +140,17 @@ def plot_cumulative_events(df: pd.DataFrame, graph_dir: Path, file_name: str):
     plt.figure(figsize=(12, 6))
 
     # === 1. График INDEX ===
-    plt.plot(df["START_TIME"], df["INDEX"],
-             linewidth=2, color="black",
-             label="Накопленное число событий")
+    plt.plot(
+        df["START_TIME"], df["INDEX"],
+        linewidth=2, color="black",
+        label="Накопленное число событий"
+    )
 
-    # === 2. Диапазон времени ===
+    # Диапазон времени
     start = df["START_TIME"].min().normalize()
     end = df["START_TIME"].max().normalize()
 
-    # === 3. Квартальные границы ===
+    # === 2. Квартальные линии ===
     quarter_starts = pd.date_range(start=start, end=end, freq="QS")
 
     for i, q in enumerate(quarter_starts):
@@ -160,23 +164,16 @@ def plot_cumulative_events(df: pd.DataFrame, graph_dir: Path, file_name: str):
                 label="Квартальная граница" if i == 0 else None
             )
 
-    # === 4. Сезоны (Весна, Лето, Осень, Зима) ===
-    # Метеорологические сезоны:
-    # Весна: 1 марта
-    # Лето: 1 июня
-    # Осень: 1 сентября
-    # Зима: 1 декабря
-
-    season_offsets = [(3, 1), (6, 1), (9, 1), (12, 1)]  # (month, day)
+    # === 3. Сезонные линии ===
+    season_offsets = [(3, 1), (6, 1), (9, 1), (12, 1)]
     season_names = ["Весна", "Лето", "Осень", "Зима"]
 
-    # строим для всех лет, попадающих в диапазон дат
     years = range(start.year, end.year + 1)
-
     season_lines = []
+
     for year in years:
         for (month, day), name in zip(season_offsets, season_names):
-            season_date = pd.Timestamp(year=year, month=month, day=day)
+            season_date = pd.Timestamp(year, month, day)
             if start <= season_date <= end:
                 season_lines.append((season_date, name))
 
@@ -190,22 +187,32 @@ def plot_cumulative_events(df: pd.DataFrame, graph_dir: Path, file_name: str):
             label="Сезон" if i == 0 else None
         )
 
-    # === 5. Настройки ===
+    # === 4. Горизонтальная линия y = 1 ===
+    plt.axhline(1, color="black", linewidth=1.2, linestyle="--", alpha=0.7)
+
+    # === 5. Границы графика ===
+    first_time = df["START_TIME"].min()
+    last_time = df["START_TIME"].max()
+
+    plt.xlim(first_time, last_time)
+    plt.ylim(0, 1)
+
+    # === 6. Подписи и стиль ===
     plt.title("График накопленного числа событий", fontsize=14)
     plt.xlabel("Время", fontsize=12)
     plt.ylabel("Нормированный индекс событий", fontsize=12)
     plt.grid(alpha=0.4)
-    plt.ylim(0, 1)
 
-    # Убираем дубликаты в легенде
+    # === 7. Убираем дубликаты в легенде ===
     handles, labels = plt.gca().get_legend_handles_labels()
     by_label = dict(zip(labels, handles))
-    plt.legend(by_label.values(), by_label.keys())
+    plt.legend(by_label.values(), by_label.keys(), loc="upper left")
 
-    # === 6. Сохранение ===
+    # === 8. Сохранение ===
     plt.tight_layout()
     plt.savefig(out_path, dpi=300, bbox_inches="tight")
     plt.close()
 
     print(f"📈 График накопленного числа событий сохранён: {out_path}")
     return out_path
+

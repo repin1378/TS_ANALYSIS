@@ -23,14 +23,14 @@ def main():
     # reports_dir = Path("reports/count")
     # generate_count_reports(csv_dir, reports_dir)
 
-    # # # Сборка DataFrame
+    # # Сборка DataFrame
     # save_dir = Path("KASANT/data")
     # # 1) Один год
     # df_one_year = get_df_full_filter(
     #     csv_dir,
-    #     department="CT",
+    #     department="CSH",
     #     year="2023",
-    #     category="2",
+    #     category="1",
     #     #road="Октябрьская",
     #     save_dir=save_dir
     # )
@@ -42,9 +42,9 @@ def main():
     # # 1) Один год
     # df_one_year = get_df_full_filter(
     #     csv_dir,
-    #     department="CT",
+    #     department="CSH",
     #     year="2024",
-    #     category="2",
+    #     category="1",
     #     #road="Октябрьская",
     #     save_dir=save_dir
     # )
@@ -55,8 +55,8 @@ def main():
     # # 2) Все годы вместе
     # df_multi = get_df_multi_year(
     #     csv_dir,
-    #     department="CT",
-    #     category="2",
+    #     department="CSH",
+    #     category="1",
     #     #road="Октябрьская",
     #     save_dir = save_dir
     # )
@@ -64,8 +64,8 @@ def main():
     # print(df_multi.count())
 
 
-    # Создание полей для гистограммы и НЧС
-    file = Path("KASANT/data/filtered_department-CT_year-2024_category-2.csv")
+    # # Создание полей для гистограммы и НЧС
+    file = Path("KASANT/data/filtered_department-CSH_year-2024_category-1.csv")
     graphs_dir = Path("KASANT/graphs")
     processed_dir = Path("KASANT/processed")
 
