@@ -1,7 +1,7 @@
 from pathlib import Path
 from modules.converter import convert_excels
 from modules.filter_manager import create_filters, load_filtered_dataframe
-from modules.report_counter import generate_count_reports
+from modules.report_counter import generate_count_reports, generate_time_distribution_report
 from modules.data_loader import get_df_full_filter, get_df_multi_year
 from modules.preprocess import preprocess_dataframe, save_histogram, plot_cumulative_events
 
@@ -23,15 +23,23 @@ def main():
     # reports_dir = Path("reports/count")
     # generate_count_reports(csv_dir, reports_dir)
 
+#=======================================================================================================================
+
     # # Сборка DataFrame
+    # # Пример: дорога, категория, год
+    # # Октябрьская (категории: 1,2,3)
+    # # Восточно-Сибирская (категории: 1,2,3)
+    # # Куйбышевская (категории: 2,3)
+    # # Приволжская (категории: 2,3)
+
     # save_dir = Path("KASANT/data")
     # # 1) Один год
     # df_one_year = get_df_full_filter(
     #     csv_dir,
-    #     department="CSH",
+    #     #department="CSH",
     #     year="2023",
-    #     category="1",
-    #     #road="Октябрьская",
+    #     category="3",
+    #     road="Приволжская",
     #     save_dir=save_dir
     # )
     # print(df_one_year.head())
@@ -42,30 +50,31 @@ def main():
     # # 1) Один год
     # df_one_year = get_df_full_filter(
     #     csv_dir,
-    #     department="CSH",
+    #     #department="CSH",
     #     year="2024",
-    #     category="1",
-    #     #road="Октябрьская",
+    #     category="3",
+    #     road="Приволжская",
     #     save_dir=save_dir
     # )
     # print(df_one_year.head())
     # print(df_one_year.count())
-    #
-    #
+
+
     # # 2) Все годы вместе
     # df_multi = get_df_multi_year(
     #     csv_dir,
-    #     department="CSH",
-    #     category="1",
-    #     #road="Октябрьская",
+    #     #department="CSH",
+    #     category="3",
+    #     road="Октябрьская",
     #     save_dir = save_dir
     # )
     # print(df_multi.head())
     # print(df_multi.count())
 
+#=======================================================================================================================
 
-    # # Создание полей для гистограммы и НЧС
-    file = Path("KASANT/data/filtered_department-CSH_year-2024_category-1.csv")
+    # Создание полей для гистограммы и НЧС
+    file = Path("KASANT/data/filtered_year-2024_road-Приволжская_category-3.csv")
     graphs_dir = Path("KASANT/graphs")
     processed_dir = Path("KASANT/processed")
 
@@ -77,6 +86,25 @@ def main():
 
     # 3. График накопленного числа событий
     plot_cumulative_events(df, graphs_dir, file.stem)
+
+#=======================================================================================================================
+
+    # csv_dir = Path("KASANT/csv")
+    # reports_dir = Path("reports/count")
+    #
+    # # Пример: дорога, категория, год
+    # # Октябрьская (категории: 1,2,3)
+    # # Восточно-Сибирская (категории: 1,2,3)
+    # # Куйбышевская (категории: 2,3)
+    # # Приволжская (категории: 2,3)
+    #
+    # generate_time_distribution_report(
+    #     csv_dir,
+    #     road="Приволжская",
+    #     category="3",
+    #     year="2024",
+    #     reports_dir=reports_dir
+    # )
 
 
 
