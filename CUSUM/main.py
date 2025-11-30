@@ -65,7 +65,7 @@ def main():
 
 
     # Создание полей для гистограммы и НЧС
-    file = Path("KASANT/data/filtered_department-CT_year-2023_category-1.csv")
+    file = Path("KASANT/data/filtered_department-CT_year-2024_category-2.csv")
     graphs_dir = Path("KASANT/graphs")
     processed_dir = Path("KASANT/processed")
 
