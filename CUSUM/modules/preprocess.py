@@ -216,3 +216,79 @@ def plot_cumulative_events(df: pd.DataFrame, graph_dir: Path, file_name: str):
     print(f"📈 График накопленного числа событий сохранён: {out_path}")
     return out_path
 
+def plot_cumulative_events_with_lambda(df, save_dir: Path, filename_stem: str):
+    """
+    Нормированный график НЧС + выделение нескольких всплесков сезонных
+    (каждый всплеск = SPIKE_FLAG островок).
+    """
+
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    # --- сортировка и расчёт НЧС ---
+    df_sorted = df.sort_values("START_TIME").reset_index(drop=True)
+    df_sorted["CUM_EVENTS"] = np.arange(1, len(df_sorted) + 1)
+    df_sorted["CUM_NORM"] = df_sorted["CUM_EVENTS"] / df_sorted["CUM_EVENTS"].max()
+
+    if "SPIKE_FLAG" not in df_sorted.columns:
+        raise ValueError("В DataFrame нет SPIKE_FLAG")
+
+    fig, ax = plt.subplots(figsize=(16, 8))
+
+    # --- нормированный НЧС ---
+    ax.plot(
+        df_sorted["START_TIME"],
+        df_sorted["CUM_NORM"],
+        color="black",
+        linewidth=2,
+        label="НЧС (нормированный)"
+    )
+
+    # --- сегментация всплесков ---
+    spike = df_sorted["SPIKE_FLAG"].values
+    times = df_sorted["START_TIME"].values
+
+    segments = []
+    in_seg = False
+    start_t = None
+
+    for i in range(len(spike)):
+        if spike[i] == 1 and not in_seg:
+            in_seg = True
+            start_t = times[i]
+        if spike[i] == 0 and in_seg:
+            segments.append((start_t, times[i-1]))
+            in_seg = False
+
+    if in_seg:
+        segments.append((start_t, times[-1]))
+
+    # --- рисуем каждый сегмент красным ---
+    for idx, (s, e) in enumerate(segments):
+        ax.axvline(s, color="red", linestyle="--", linewidth=1.2)
+        ax.axvline(e, color="red", linestyle="--", linewidth=1.2)
+
+        ax.axvspan(
+            s, e,
+            color="red",
+            alpha=0.15,
+            label="Период всплеска" if idx == 0 else None
+        )
+
+    # --- ограничиваем диапазоны ---
+    ax.set_ylim(0, 1)
+    ax.set_xlim(df_sorted["START_TIME"].min(), df_sorted["START_TIME"].max())
+
+    ax.set_title(f"Нормированный НЧС с сезонными всплесками: {filename_stem}", fontsize=16)
+    ax.set_xlabel("Время")
+    ax.set_ylabel("Нормированный НЧС")
+
+    ax.grid(linestyle="--", alpha=0.4)
+    ax.legend()
+
+    out_path = save_dir / f"{filename_stem}_cumulative_spike.pdf"
+    plt.tight_layout()
+    plt.savefig(out_path)
+    plt.close()
+
+    print(f"📈 График НЧС (нормированный) с 4 всплесками сохранён: {out_path}")
+
