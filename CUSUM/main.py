@@ -6,7 +6,7 @@ from modules.report_counter import generate_count_reports, generate_time_distrib
 from modules.data_loader import get_df_full_filter, get_df_multi_year
 from modules.preprocess import preprocess_dataframe, save_histogram, plot_cumulative_events, plot_cumulative_events_with_lambda
 from modules.seasonal_lambda import estimate_lambda_for_season
-from modules.synthetic_year_generator import generate_synthetic_year, generate_synthetic_year_with_spikes_smooth
+from modules.synthetic_year_generator import generate_synthetic_year, generate_synthetic_year_with_spikes_smooth, generate_spike_report
 
 def main():
 
@@ -245,9 +245,9 @@ def main():
     ]
 
     # ==== параметры всплеска ====
-    delta = 5               # λ1 = δ·λ0 → удвоение интенсивности
-    spike_days = 40         # длительность всплеска
-    transition_days = 15     # длительность экспоненциального перехода
+    delta = 3               # λ1 = δ·λ0 → удвоение интенсивности
+    spike_days = 30         # длительность всплеска
+    transition_days = 10     # длительность экспоненциального перехода
     k = 2                   # крутизна экспоненты
 
     for road, categories, year in tasks:
@@ -293,6 +293,10 @@ def main():
             plot_cumulative_events_with_lambda(df, graphs_dir, file_path.stem)
 
             print(f"    ✔ Готово для {road}, категория {category}, год {year}")
+
+            # сохраняем мини-отчёт
+            report_dir = Path("KASANT/calculation/reports/synthetic_spike_reports")
+            generate_spike_report(df_syn, report_dir, road, category, year)
 
 
 

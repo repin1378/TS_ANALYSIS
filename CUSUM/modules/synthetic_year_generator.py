@@ -231,3 +231,62 @@ def generate_synthetic_year_with_spikes_smooth(
 
     print(f"🔥 Сгенерирован synthetic CSV c 4 всплесками строго по серединам сезонов: {out_path}")
     return df_all
+
+def generate_spike_report(
+    df_synthetic: pd.DataFrame,
+    out_dir: Path,
+    road: str,
+    category: str,
+    year: int
+):
+    """
+    Создаёт мини-отчёт по всплескам:
+    - время начала всплеска
+    - время окончания всплеска
+    - λ0 и λ1 в минуту
+    - λ0 и λ1 в пересчёте на месяц
+    - сезон
+    """
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    rows = []
+
+    # сгруппируем по сезонам
+    for season, df_season in df_synthetic.groupby("SEASON"):
+
+        # где именно был всплеск?
+        spike_mask = df_season["SPIKE_FLAG"] == 1
+
+        if not spike_mask.any():
+            continue
+
+        spike_start = df_season.loc[spike_mask, "START_TIME"].min()
+        spike_end   = df_season.loc[spike_mask, "START_TIME"].max()
+
+        lambda0 = df_season["LAMBDA0"].iloc[0]
+        lambda1 = df_season["LAMBDA1"].iloc[0]
+
+        lambda0_month = df_season["LAMBDA_MONTH"].iloc[0]
+        lambda1_month = lambda0_month * (lambda1 / lambda0)
+
+        rows.append({
+            "ROAD": road,
+            "CATEGORY": category,
+            "YEAR": year,
+            "SEASON": season,
+            "SPIKE_START": spike_start,
+            "SPIKE_END": spike_end,
+            "LAMBDA0": lambda0,
+            "LAMBDA1": lambda1,
+            "LAMBDA0_MONTH": lambda0_month,
+            "LAMBDA1_MONTH": lambda1_month
+        })
+
+    df_report = pd.DataFrame(rows)
+
+    out_path = out_dir / f"report_{road}_{category}_{year}.csv"
+    df_report.to_csv(out_path, index=False, encoding="utf-8-sig")
+
+    print(f"📄 Мини-отчёт по всплескам сохранён: {out_path}")
+    return df_report
