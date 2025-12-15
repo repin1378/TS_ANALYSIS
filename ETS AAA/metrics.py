@@ -47,3 +47,16 @@ def compute_metrics(y_test, pred_test, fit_full):
         "AIC": aic_val,
         "resid_std": resid_std,
     }
+
+def mape_percent(y_true, y_pred, eps=1e-9) -> float:
+    y_true = np.asarray(y_true, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+    denom = np.maximum(np.abs(y_true), eps)
+    return float(np.mean(np.abs((y_true - y_pred) / denom)) * 100.0)
+
+
+def smape_percent(y_true, y_pred, eps=1e-9) -> float:
+    y_true = np.asarray(y_true, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+    denom = np.maximum((np.abs(y_true) + np.abs(y_pred)) / 2.0, eps)
+    return float(np.mean(np.abs(y_true - y_pred) / denom) * 100.0)
