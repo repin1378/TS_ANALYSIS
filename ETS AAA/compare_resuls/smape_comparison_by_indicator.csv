@@ -1,0 +1,7 @@
+indicator,roads_n,SMAPE_ETS_mean,SMAPE_CatBoost_mean,Improvement_%
+specific,4,63.0538,54.4276,13.68
+train_km,4,12.3374,10.9118,11.56
+loss_12,4,101.9003,98.7446,3.1
+loss_total,4,70.0812,68.6277,2.07
+loss_3,4,120.7784,128.5347,-6.42
+loss_tech,4,94.9852,103.8688,-9.35
