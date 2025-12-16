@@ -1,45 +1,134 @@
+"""
+series_generator.py
+
+Генерация синтетических временных рядов
+для показателей перевозочного процесса ЖД.
+"""
+
+from __future__ import annotations
+
 import numpy as np
+import pandas as pd
+from typing import Dict
 
-def generate_series(base: float, trend: float, seasonal_amp: float, noise_scale: float, length: int = 48, num_forced_outliers: int = 0) -> np.ndarray:
 
-    # генерация аддитивного временного рядя длины length из трёх систематических составляющих — уровень, линейный тренд, сезонность — плюс шум (гауссов), и редкие выбросы (“шпильки”).
-    # base — базовый уровень ряда (средний уровень без тренда/сезонности). Единицы такие же, как у целевого показателя (например, поездо-час/1 млн поездо-км).
-    # trend — приращение за один шаг времени. Если данные месячные, то это изменение в единицах за месяц. Знак «−» даёт нисходящий тренд.
-    # seasonal_amp — амплитуда сезонных колебаний (аддитивная). При 10 сезонная волна колеблется примерно ±10 вокруг трендовой линии.
-    # noise_scale — стандартное отклонение белого шума N(0, noise_scale^2).
-    # length — количество точек (по умолчанию 48 месяцев = 4 года).
+# ======================================================
+# БАЗОВАЯ ГЕНЕРАЦИЯ
+# ======================================================
 
-    t = np.arange(length)   # дискретное время в шагах (месяцах).
+def _generate_base_series(
+    dates: pd.DatetimeIndex,
+    base: float,
+    trend: float,
+    seasonal_amp: float,
+    noise_scale: float,
+    allow_spikes: bool = False,
+    num_forced_outliers: int = 0,
+) -> pd.Series:
+    """
+    Генерация временного ряда с трендом, сезонностью и шумом.
+    Все параметры трактуются как ГОДОВЫЕ.
+    """
 
-    # Сезонная компонента
-    seasonal = seasonal_amp * np.sin(2 * np.pi * t / 12)    # используется синус с периодом 12 (месяцев) — классическая гладкая сезонность
+    n = len(dates)
+    t = np.arange(n)
 
-    # Трендовая составляющая
-    base_trend = base + trend * t
+    # -------------------------------
+    # Год → месяц
+    # -------------------------------
+    base_m = base / 12.0
+    trend_m = trend / 12.0
 
-    # Случайный шум
-    noise = np.random.normal(scale=noise_scale, size=length)
+    # -------------------------------
+    # Аддитивная структура
+    # -------------------------------
+    series = base_m + trend_m * t
+    series += seasonal_amp * np.sin(2 * np.pi * t / 12)
+    series += np.random.normal(0, noise_scale, size=n)
 
-    # Случайные выбросы по старой логике
-    spikes = np.random.choice(
-        [0, 0, 0, 50, -50],
-        size=length,
-        p=[0.8, 0.1, 0.05, 0.03, 0.02]
-    )
+    series = pd.Series(series, index=dates)
 
-    series = base_trend + seasonal + noise + spikes
+    # -------------------------------
+    # Режимные изменения (структурные сдвиги)
+    # -------------------------------
+    years = series.index.year
+    multiplier = np.ones(n)
 
-    #  Принудительные выбросы (если нужно)
+    multiplier[years >= 2022] *= 1.15
+    multiplier *= 1.0 + 0.02 * np.clip(years - 2022, 0, None)
 
-    if num_forced_outliers > 0:
-        # Берём случайные индексы без повторений
-        positions = np.random.choice(length, size=num_forced_outliers, replace=False)
+    series *= multiplier
 
-        # Амплитуды выбросов: ±(60…120)
-        amplitudes = np.random.choice([80, 100, 120, -80, -100, -120],
-                                      size=num_forced_outliers)
+    # -------------------------------
+    # Принудительные выбросы
+    # -------------------------------
+    if allow_spikes and num_forced_outliers > 0:
+        idx = np.random.choice(n, size=num_forced_outliers, replace=False)
+        series.iloc[idx] *= np.random.uniform(1.5, 2.5, size=len(idx))
 
-        for pos, amp in zip(positions, amplitudes):
-            series[pos] += amp
+    # -------------------------------
+    # ФИЗИЧЕСКОЕ ОГРАНИЧЕНИЕ
+    # -------------------------------
+    series = series.clip(lower=0)
 
     return series
+
+
+# ======================================================
+# ГЕНЕРАЦИЯ ВСЕХ ПОКАЗАТЕЛЕЙ
+# ======================================================
+
+def generate_all_series(
+    gen_params: Dict,
+    start: str,
+    end: str,
+    allow_spikes: bool = False,
+    num_forced_outliers: int = 0,
+) -> Dict[str, pd.DataFrame]:
+    """
+    Генерирует все показатели по всем дорогам.
+    """
+
+    dates = pd.date_range(start, end, freq="MS")
+
+    indicators = set()
+    for road_params in gen_params.values():
+        indicators.update(road_params.keys())
+
+    result = {ind: pd.DataFrame(index=dates) for ind in indicators}
+
+    for road, params in gen_params.items():
+
+        # --- базовые ряды ---
+        tmp = {}
+
+        for ind, cfg in params.items():
+            if isinstance(cfg, dict):
+                tmp[ind] = _generate_base_series(
+                    dates=dates,
+                    allow_spikes=allow_spikes,
+                    num_forced_outliers=num_forced_outliers,
+                    **cfg,
+                )
+
+        # --- агрегированные показатели ---
+        if "loss_total" in params:
+            expr = params["loss_total"]
+            tmp["loss_total"] = eval(expr, {}, tmp).clip(lower=0)
+
+        if "specific" in params:
+            expr = params["specific"]
+            specific = eval(expr, {}, tmp)
+
+            # нелинейный структурный множитель
+            years = dates.year
+            structure_factor = 1.0 + 0.15 * np.tanh((years - 2021) / 2)
+            specific = specific * structure_factor
+
+            tmp["specific"] = specific.clip(lower=0)
+
+        # --- запись в итог ---
+        for ind, series in tmp.items():
+            result[ind][road] = series
+
+    return result

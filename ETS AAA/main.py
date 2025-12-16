@@ -14,38 +14,75 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
-from series_generator import generate_series
-from generation_config import ROADS, DATES, PARAMS
+from series_generator import generate_all_series
+from generation_config import ROADS, DATES, GEN_PARAMS
 from generation_config import SEED  # если нужно использовать seed явно
 from ets_model import run_ets_forecast
-from ets_report import generate_ets_pdf_report
+# from ets_report import generate_ets_pdf_report
+import warnings
+from statsmodels.tools.sm_exceptions import ConvergenceWarning
+from sanity_check import sanity_check_yearly_aggregation_to_csv
+from catboost_model import run_catboost_forecast
+from smape_comparison import build_smape_comparison
+
+warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
 
-# Вызов generation_config.py для генерации временных рядов
-roads = ROADS
-dates = DATES
-params = PARAMS
+# --------------------------------------------------
+# 1. Генерация данных
+# --------------------------------------------------
+data_bundle = generate_all_series(
+    gen_params=GEN_PARAMS,
+    start="2018-01-01",
+    end="2025-12-01",
+    allow_spikes=True,
+    num_forced_outliers=3,
+)
 
-# cоздание синтетического набора данных
-# cоздаётся пустой DataFrame data с индексом dates (48 месяцев 2022–2025 гг.);
-# для каждой дороги r:
-# из словаря берутся её параметры (base, trend, amp, noise);
-# Функция generate_series() создаёт ряд длиной 48 месяцев;
-# ряд добавляется в таблицу data как новый столбец.
-data = pd.DataFrame(index=dates)
-for r in roads:
-    base, trend, amp, noise = params[r]
-    data[r] = generate_series(base, trend, amp, noise, len(dates))
+ROADS = ["Окт", "Клнг", "Моск", "Горьк", "Сев", "С-Кав", "Ю-Вост", "Прив", "Кбш", "Сверд", "Ю-Ур", "З-Сиб", "Крас", "В-Сиб", "Заб", "Двост"]
+INDICATORS = [
+    "train_km",
+    "loss_12",
+    "loss_3",
+    "loss_tech",
+    "loss_total",
+    "specific",
+]
 
-# --------------------------------
-# Вызов вынесенной ETS-модели
-# --------------------------------
-forecasts_df, metrics_df = run_ets_forecast(data, roads)
 
-# Генерация PDF
-generate_ets_pdf_report(
-    forecasts_df,
-    metrics_df,
-    charts_dir="ets_results",
-    outfile="ets_results/ets_report.pdf"
+# --------------------------------------------------
+# 2. ETS (baseline)
+# --------------------------------------------------
+for ind in INDICATORS:
+    run_ets_forecast(
+        data_bundle=data_bundle,
+        indicator=ind,
+        roads=ROADS,
+        horizon=12,
+        outdir="ets_results",
+    )
+
+
+# --------------------------------------------------
+# 3. CatBoost (ML)
+# --------------------------------------------------
+for ind in INDICATORS:
+    run_catboost_forecast(
+        data_bundle=data_bundle,
+        indicator=ind,
+        roads=ROADS,
+        horizon=12,
+        outdir="catboost_results",
+        exog_indicators=["train_km", "loss_total"] if ind == "specific" else None,
+    )
+
+
+print("✅ ETS и CatBoost рассчитаны. CSV и графики сохранены.")
+
+
+build_smape_comparison(
+    ets_metrics_path="ets_results/ets_metrics_all_indicators.csv",
+    catboost_metrics_path="catboost_results/catboost_metrics_all_indicators.csv",
+    detailed_out="compare_resuls/smape_comparison_detailed.csv",
+    summary_out="compare_resuls/smape_comparison_by_indicator.csv",
 )
