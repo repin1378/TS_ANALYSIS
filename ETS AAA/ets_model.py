@@ -155,7 +155,7 @@ def run_ets_forecast(
             lower=lower_95,
             upper=upper_95,
             road=road,
-            title=f"ETS прогноз: {indicator}",
+            indicator=indicator,
             outpath=outdir / f"forecast_{indicator}_{road}.png",
         )
 

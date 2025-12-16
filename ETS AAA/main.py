@@ -28,56 +28,56 @@ from smape_comparison import build_smape_comparison
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
 
-# # --------------------------------------------------
-# # 1. Генерация данных
-# # --------------------------------------------------
-# data_bundle = generate_all_series(
-#     gen_params=GEN_PARAMS,
-#     start="2018-01-01",
-#     end="2025-12-01",
-#     allow_spikes=True,
-#     num_forced_outliers=3,
-# )
-#
-# ROADS = ["Окт", "Клнг", "Заб", "Двост"]
-# INDICATORS = [
-#     "train_km",
-#     "loss_12",
-#     "loss_3",
-#     "loss_tech",
-#     "loss_total",
-#     "specific",
-# ]
-#
-#
-# # --------------------------------------------------
-# # 2. ETS (baseline)
-# # --------------------------------------------------
-# for ind in INDICATORS:
-#     run_ets_forecast(
-#         data_bundle=data_bundle,
-#         indicator=ind,
-#         roads=ROADS,
-#         horizon=12,
-#         outdir="ets_results",
-#     )
-#
-#
-# # --------------------------------------------------
-# # 3. CatBoost (ML)
-# # --------------------------------------------------
-# for ind in INDICATORS:
-#     run_catboost_forecast(
-#         data_bundle=data_bundle,
-#         indicator=ind,
-#         roads=ROADS,
-#         horizon=12,
-#         outdir="catboost_results",
-#         exog_indicators=["train_km", "loss_total"] if ind == "specific" else None,
-#     )
-#
-#
-# print("✅ ETS и CatBoost рассчитаны. CSV и графики сохранены.")
+# --------------------------------------------------
+# 1. Генерация данных
+# --------------------------------------------------
+data_bundle = generate_all_series(
+    gen_params=GEN_PARAMS,
+    start="2018-01-01",
+    end="2025-12-01",
+    allow_spikes=True,
+    num_forced_outliers=3,
+)
+
+ROADS = ["Окт", "Клнг", "Моск", "Горьк", "Сев", "С-Кав", "Ю-Вост", "Прив", "Кбш", "Сверд", "Ю-Ур", "З-Сиб", "Крас", "В-Сиб", "Заб", "Двост"]
+INDICATORS = [
+    "train_km",
+    "loss_12",
+    "loss_3",
+    "loss_tech",
+    "loss_total",
+    "specific",
+]
+
+
+# --------------------------------------------------
+# 2. ETS (baseline)
+# --------------------------------------------------
+for ind in INDICATORS:
+    run_ets_forecast(
+        data_bundle=data_bundle,
+        indicator=ind,
+        roads=ROADS,
+        horizon=12,
+        outdir="ets_results",
+    )
+
+
+# --------------------------------------------------
+# 3. CatBoost (ML)
+# --------------------------------------------------
+for ind in INDICATORS:
+    run_catboost_forecast(
+        data_bundle=data_bundle,
+        indicator=ind,
+        roads=ROADS,
+        horizon=12,
+        outdir="catboost_results",
+        exog_indicators=["train_km", "loss_total"] if ind == "specific" else None,
+    )
+
+
+print("✅ ETS и CatBoost рассчитаны. CSV и графики сохранены.")
 
 
 build_smape_comparison(
