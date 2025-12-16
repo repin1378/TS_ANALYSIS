@@ -1,12 +1,15 @@
 from pathlib import Path
 import pandas as pd
 from modules.converter import convert_excels
+from modules.cusum_exp_seasonal import run_cusum_exp_from_csv
 from modules.filter_manager import create_filters, load_filtered_dataframe
 from modules.report_counter import generate_count_reports, generate_time_distribution_report
 from modules.data_loader import get_df_full_filter, get_df_multi_year
-from modules.preprocess import preprocess_dataframe, save_histogram, plot_cumulative_events, plot_cumulative_events_with_lambda
+from modules.preprocess import preprocess_dataframe, save_histogram, plot_cumulative_events, plot_cumulative_events_with_lambda, plot_cumulative_events_with_cusum_alarms
 from modules.seasonal_lambda import estimate_lambda_for_season
 from modules.synthetic_year_generator import generate_synthetic_year, generate_synthetic_year_with_spikes_smooth, generate_spike_report
+from modules.cusum_threshold import design_cusum_threshold_analytic, estimate_metrics_mc, compare_analytic_vs_mc_extended,save_comparison_to_csv,save_comparison_to_excel, find_h_from_delta_arl1, compute_arl0_from_delta_arl1, build_tables_h_delta_arl1, fit_new_approximations, run_arl0_delta_experiment, run_arl1_delta_experiment, run_arl1_target_delta_experiment, run_arl0_arl1_delta_experiment
+import numpy as np
 
 def main():
 
@@ -233,71 +236,244 @@ def main():
 
 #=======================================================================================================================
 
-    lambda_dir = Path("KASANT/calculation/lambda_0")
-    synthetic_dir = Path("KASANT/calculation/synthetic_spike")
-    graphs_dir = Path("KASANT/calculation/graphs_spike")
+    # lambda_dir = Path("KASANT/calculation/lambda_0")
+    # synthetic_dir = Path("KASANT/calculation/synthetic_spike")
+    # graphs_dir = Path("KASANT/calculation/graphs_spike")
+    #
+    # tasks = [
+    #     ("Октябрьская",        [2, 3], 2025),
+    #     ("Восточно-Сибирская", [2, 3], 2025),
+    #     ("Приволжская",        [2, 3], 2025),
+    #     ("Северная",           [3],    2025),
+    # ]
+    #
+    # # ==== параметры всплеска ====
+    # delta = 3               # λ1 = δ·λ0 → удвоение интенсивности
+    # spike_days = 30         # длительность всплеска
+    # transition_days = 10     # длительность экспоненциального перехода
+    # k = 2                   # крутизна экспоненты
+    #
+    # for road, categories, year in tasks:
+    #
+    #     print("\n" + "=" * 90)
+    #     print(f"ГЕНЕРАЦИЯ СИНТЕТИКИ СО ВСПЛЕСКАМИ — дорога: {road}, год: {year}")
+    #
+    #     for category in categories:
+    #
+    #         print(f"\n  Категория: {category}")
+    #
+    #         # === 1. Генерируем синтетический год со всплесками ===
+    #         df_syn = generate_synthetic_year_with_spikes_smooth(
+    #             lambda_dir=lambda_dir,
+    #             road=road,
+    #             category=str(category),
+    #             year=year,
+    #             out_dir=synthetic_dir,
+    #             delta=delta,
+    #             spike_days=spike_days,
+    #             transition_days=transition_days,
+    #             k=k
+    #         )
+    #
+    #         file_path = synthetic_dir / f"synthetic_smooth_{road}_{category}_{year}.csv"
+    #         print(f"    → Файл синтетики: {file_path}")
+    #
+    #         # === 2. Читаем синтетический CSV ===
+    #         df = pd.read_csv(file_path, parse_dates=["START_TIME"])
+    #
+    #         # === 3. Гистограмма интервалов TIME_DIFF ===
+    #         print(f"    → Построение гистограммы…")
+    #         save_histogram(df, graphs_dir, file_path.stem)
+    #
+    #         # === 4. График накопленного числа событий ===
+    #         print(f"    → Построение графика НЧС…")
+    #         plot_cumulative_events(df, graphs_dir, file_path.stem)
+    #
+    #         print(f"    ✔ Готово для {road}, категория {category}, год {year}")
+    #
+    #         print(f"    → Построение графика НЧС + λ(t)…")
+    #         # 5. НЧС + λ(t)
+    #         plot_cumulative_events_with_lambda(df, graphs_dir, file_path.stem)
+    #
+    #         print(f"    ✔ Готово для {road}, категория {category}, год {year}")
+    #
+    #         # сохраняем мини-отчёт
+    #         report_dir = Path("KASANT/calculation/reports/synthetic_spike_reports")
+    #         generate_spike_report(df_syn, report_dir, road, category, year)
 
-    tasks = [
-        ("Октябрьская",        [2, 3], 2025),
-        ("Восточно-Сибирская", [2, 3], 2025),
-        ("Приволжская",        [2, 3], 2025),
-        ("Северная",           [3],    2025),
-    ]
+#=======================================================================================================================
 
-    # ==== параметры всплеска ====
-    delta = 3               # λ1 = δ·λ0 → удвоение интенсивности
-    spike_days = 30         # длительность всплеска
-    transition_days = 10     # длительность экспоненциального перехода
-    k = 2                   # крутизна экспоненты
+    # rows = compare_analytic_vs_mc_extended(
+    #     deltas=[1.25, 1.5, 2.0, 2.5, 3.0],
+    #     arl0_targets=[100, 250, 500, 1000],
+    #     n_runs_arl0=500,
+    #     n_runs_arl1=500
+    # )
+    #
+    # save_comparison_to_csv(rows, Path("KASANT/cusum_optimization/cusum_threshold_report_500.csv"))
+    # save_comparison_to_excel(rows, Path("KASANT/cusum_optimization/cusum_threshold_report_500.xlsx"))
 
-    for road, categories, year in tasks:
+#=======================================================================================================================
 
-        print("\n" + "=" * 90)
-        print(f"ГЕНЕРАЦИЯ СИНТЕТИКИ СО ВСПЛЕСКАМИ — дорога: {road}, год: {year}")
+    # ===== Пути для сохранения результатов =====
+    csv_path = Path(
+        "KASANT/cusum_optimization/static/h_from_delta_arl0.csv"
+    )
+    json_path = Path(
+        "KASANT/cusum_optimization/dynamic/h_from_delta_arl0.json"
+    )
 
-        for category in categories:
+    # ===== Параметры эксперимента =====
+    deltas = [1.5, 2.0, 2.5, 3.0]
+    arl0_targets = [100, 150, 200, 250]
 
-            print(f"\n  Категория: {category}")
+    # Количество прогонов Монте-Карло
+    n_runs_mc = 3000
 
-            # === 1. Генерируем синтетический год со всплесками ===
-            df_syn = generate_synthetic_year_with_spikes_smooth(
-                lambda_dir=lambda_dir,
-                road=road,
-                category=str(category),
-                year=year,
-                out_dir=synthetic_dir,
-                delta=delta,
-                spike_days=spike_days,
-                transition_days=transition_days,
-                k=k
-            )
+    # Если хочешь задать вручную — можно,
+    # но теперь автоподбор h_grid работает корректно
+    h_grid = None
 
-            file_path = synthetic_dir / f"synthetic_smooth_{road}_{category}_{year}.csv"
-            print(f"    → Файл синтетики: {file_path}")
+    # ===== Запуск экспериментов =====
+    # for delta in deltas:
+    #
+    #     print("\n" + "=" * 80)
+    #     print(f"DELTA = {delta}")
+    #     print("=" * 80)
+    #
+    #     for arl0 in arl0_targets:
+    #         print(f"\n--- ARL0_target = {arl0} ---")
 
-            # === 2. Читаем синтетический CSV ===
-            df = pd.read_csv(file_path, parse_dates=["START_TIME"])
+            # -------------------------------------------------
+            # 1) Аналитический режим (повторение статьи)
+            # -------------------------------------------------
+            # run_arl0_delta_experiment(
+            #     arl0_target=arl0,
+            #     delta_target=delta,
+            #     n_runs_mc=n_runs_mc,
+            #     csv_path=csv_path,
+            #     json_path=json_path,
+            #     mode="analytic",
+            #     max_steps=100_000,
+            #     n_workers=6,
+            # )
 
-            # === 3. Гистограмма интервалов TIME_DIFF ===
-            print(f"    → Построение гистограммы…")
-            save_histogram(df, graphs_dir, file_path.stem)
+            # -------------------------------------------------
+            # 2) Практический режим (MC + ограничения)
+            # -------------------------------------------------
+            # run_arl0_delta_experiment(
+            #     arl0_target=arl0,
+            #     delta_target=delta,
+            #     n_runs_mc=n_runs_mc,
+            #     csv_path=csv_path,  # в этом режиме CSV не используется
+            #     json_path=json_path,
+            #     mode="mc_optimal_E",
+            #     h_grid=h_grid,  # None → автоподбор
+            #     arl0_tolerance=0.10,  # ±10% по ARL0
+            #     arl1_min_factor=3.0,  # ARL1 ≥ ARL0 / 3
+            #     arl1_min_abs=5.0,  # минимум ARL1
+            #     arl1_max_factor=1.2,  # ARL1 ≤ 1.2 × ARL0
+            #     max_steps=100_000,
+            #     n_workers=6,
+            # )
 
-            # === 4. График накопленного числа событий ===
-            print(f"    → Построение графика НЧС…")
-            plot_cumulative_events(df, graphs_dir, file_path.stem)
+    # json_path = Path("KASANT/cusum_optimization/dynamic/h_from_delta_arl1.json")
+    #
+    #
+    # # Значения, которые ты указал:
+    # deltas = [1.5, 2.0, 2.5, 3.0]
+    # arl1_targets = [10, 20, 30, 40]
+    # arl0_targets = [100, 150, 200, 250]
+    #
+    # # Количество прогонов Монте-Карло
+    # n_runs_mc = 3000
+    #
+    # # Если нужен явный диапазон — можно задать, но теперь это необязательно:
+    # # h_grid = np.arange(0.5, 8.5, 0.1)
+    #
+    # for delta in deltas:
+    #     print(f"\n============ Δ = {delta} ============")
+    #
+    #     for arl1 in arl1_targets:
+    #
+    #         print(f"\n--- ARL1_target = {arl1} ---")
+    #
+    #         # Запуск улучшенной оптимизации
+    #         run_arl1_target_delta_experiment(
+    #             arl1_target=arl1,
+    #             delta_target=delta,
+    #             n_runs_mc=n_runs_mc,
+    #             json_path=json_path,
+    #             # h_grid=h_grid,           # авто-подбор h_grid
+    #             arl1_tolerance=0.10,   # ±20% окно для ARL1
+    #             arl0_max=200.0,        # ограничиваем слишком большие ARL0
+    #             arl0_min_factor=1.5,   # ARL0_min = ARL1_target * 1.5
+    #             max_steps=100000,
+    #             n_workers=6            # параллелизм
+    #         )
 
-            print(f"    ✔ Готово для {road}, категория {category}, год {year}")
+    # ===== Пути =====
+    # json_path = Path(
+    #     "KASANT/cusum_optimization/fast/h_from_delta_arl0_arl1_fast.json"
+    # )
+    #
+    # # ===== Параметры =====
+    # deltas = [1.5, 2.0, 2.5, 3.0]
+    # arl0_targets = [100, 150, 200, 250]
+    # arl1_targets = [10, 20, 30, 40]
+    #
+    # # ===== Быстрые параметры MC =====
+    # n_runs_mc = 1000
+    # h_grid = np.arange(0.8, 6.6, 0.2)
+    #
+    # arl0_tolerance = 0.25
+    # arl1_tolerance = 0.25
+    # arl0_max = 250          # можно заменить на 300
+    #
+    # max_steps = 80_000
+    # n_workers = 6
+    #
+    # # ===== Запуск =====
+    # for delta in deltas:
+    #     print("\n" + "=" * 90)
+    #     print(f"DELTA = {delta}")
+    #     print("=" * 90)
+    #
+    #     for arl0 in arl0_targets:
+    #         for arl1 in arl1_targets:
+    #             print(f"\n--- δ={delta}, ARL0≈{arl0}, ARL1≈{arl1} ---")
+    #
+    #             run_arl0_arl1_delta_experiment(
+    #                 delta_target=delta,
+    #                 arl0_target=arl0,
+    #                 arl1_target=arl1,
+    #                 n_runs_mc=n_runs_mc,
+    #                 json_path=json_path,
+    #                 h_grid=h_grid,
+    #                 arl0_tolerance=arl0_tolerance,
+    #                 arl1_tolerance=arl1_tolerance,
+    #                 arl0_max=arl0_max,
+    #                 max_steps=max_steps,
+    #                 n_workers=n_workers,
+    #             )
 
-            print(f"    → Построение графика НЧС + λ(t)…")
-            # 5. НЧС + λ(t)
-            plot_cumulative_events_with_lambda(df, graphs_dir, file_path.stem)
+    run_cusum_exp_from_csv(
+        csv_path=Path("KASANT/calculation/synthetic_spike/synthetic_smooth_Октябрьская_3_2025.csv"),
+        delta_target=3.0,
+        arl0_target=200,
+        window_size=30,
+        cooldown_after_alarm=30,
+        h_json_dir=Path("KASANT/cusum_optimization/dynamic"),
+        out_dir=Path("KASANT/cusum_results/"),
+    )
 
-            print(f"    ✔ Готово для {road}, категория {category}, год {year}")
+    df_full = pd.read_csv("KASANT/cusum_results/synthetic_smooth_Октябрьская_3_2025_cusum_full.csv")
 
-            # сохраняем мини-отчёт
-            report_dir = Path("KASANT/calculation/reports/synthetic_spike_reports")
-            generate_spike_report(df_syn, report_dir, road, category, year)
-
+    plot_cumulative_events_with_cusum_alarms(
+        df=df_full,
+        save_dir=Path("KASANT/cusum_results/graphs"),
+        filename_stem="Октябрьская_3_2025"
+    )
 
 
 if __name__ == "__main__":

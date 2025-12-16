@@ -292,3 +292,130 @@ def plot_cumulative_events_with_lambda(df, save_dir: Path, filename_stem: str):
 
     print(f"📈 График НЧС (нормированный) с 4 всплесками сохранён: {out_path}")
 
+# ============================================================
+# 4. ГРАФИК НЧС + ВЕРТИКАЛЬНЫЕ ЛИНИИ СБОЕВ CUSUM
+# ============================================================
+
+def plot_cumulative_events_with_cusum_alarms(
+    df: pd.DataFrame,
+    save_dir: Path,
+    filename_stem: str,
+    alarm_col: str = "CUSUM_ALARM",
+    spike_col: str = "SPIKE_FLAG",
+):
+    """
+    ТОЧНАЯ копия plot_cumulative_events
+    + периоды всплесков (SPIKE_FLAG)
+    + вертикальные пунктирные линии CUSUM.
+
+    Позволяет наглядно проверить,
+    что CUSUM-сигналы попадают внутрь периодов сбоя.
+    """
+
+    import matplotlib.pyplot as plt
+
+    save_dir.mkdir(parents=True, exist_ok=True)
+    out_path = save_dir / f"{filename_stem}_cumulative_cusum.pdf"
+
+    # --- подготовка данных ---
+    df = df.copy()
+    df["START_TIME"] = pd.to_datetime(df["START_TIME"], errors="coerce")
+    df = df.sort_values("START_TIME").reset_index(drop=True)
+
+    if spike_col not in df.columns:
+        raise ValueError(f"В DataFrame нет колонки {spike_col}")
+
+    plt.figure(figsize=(12, 6))
+
+    # =====================================================
+    # 1. Та же кривая НЧС (INDEX), как в plot_cumulative_events
+    # =====================================================
+    plt.plot(
+        df["START_TIME"], df["INDEX"],
+        linewidth=2, color="black",
+        label="Накопленное число событий"
+    )
+
+    # =====================================================
+    # 2. ПЕРИОДЫ ВСПЛЕСКОВ (SPIKE_FLAG)
+    # =====================================================
+    spike = df[spike_col].values
+    times = df["START_TIME"].values
+
+    segments = []
+    in_seg = False
+    start_t = None
+
+    for i in range(len(spike)):
+        if spike[i] == 1 and not in_seg:
+            in_seg = True
+            start_t = times[i]
+        if spike[i] == 0 and in_seg:
+            segments.append((start_t, times[i - 1]))
+            in_seg = False
+
+    if in_seg:
+        segments.append((start_t, times[-1]))
+
+    for idx, (s, e) in enumerate(segments):
+        plt.axvline(s, color="red", linestyle="--", linewidth=1.2)
+        plt.axvline(e, color="red", linestyle="--", linewidth=1.2)
+        plt.axvspan(
+            s, e,
+            color="red",
+            alpha=0.15,
+            label="Период всплеска" if idx == 0 else None
+        )
+
+    # =====================================================
+    # 3. ВЕРТИКАЛЬНЫЕ ЛИНИИ CUSUM
+    # =====================================================
+    alarm_times = df.loc[df[alarm_col] == 1, "START_TIME"]
+
+    for i, t in enumerate(alarm_times):
+        plt.axvline(
+            t,
+            linestyle="--",
+            color="blue",
+            linewidth=1.4,
+            alpha=0.9,
+            label="CUSUM-сбой" if i == 0 else None
+        )
+
+    # =====================================================
+    # 4. Горизонтальная линия y = 1
+    # =====================================================
+    plt.axhline(1, color="black", linewidth=1.2, linestyle="--", alpha=0.7)
+
+    # =====================================================
+    # 5. Границы и оформление
+    # =====================================================
+    plt.xlim(df["START_TIME"].min(), df["START_TIME"].max())
+    plt.ylim(0, 1)
+
+    plt.title(
+        "График накопленного числа событий:\n"
+        "периоды всплесков и CUSUM-сигналы",
+        fontsize=14
+    )
+    plt.xlabel("Время", fontsize=12)
+    plt.ylabel("Нормированный индекс событий", fontsize=12)
+    plt.grid(alpha=0.4)
+
+    # --- легенда без дублей ---
+    handles, labels = plt.gca().get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    plt.legend(by_label.values(), by_label.keys(), loc="upper left")
+
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close()
+
+    print(f"📈 CUSUM-график с периодами всплесков сохранён: {out_path}")
+
+    return out_path
+
+
+
+
+
