@@ -1,22 +1,31 @@
 from pathlib import Path
 import pandas as pd
-from modules.converter import convert_excels
+from modules.converter import convert_excels, convert_xlsx_to_csv_keep_all_fields, compare_csv_structures, merge_csv_files
 from modules.cusum_exp_seasonal import run_cusum_exp_from_csv
 from modules.filter_manager import create_filters, load_filtered_dataframe
 from modules.report_counter import generate_count_reports, generate_time_distribution_report
 from modules.data_loader import get_df_full_filter, get_df_multi_year
 from modules.preprocess import preprocess_dataframe, save_histogram, plot_cumulative_events, plot_cumulative_events_with_lambda, plot_cumulative_events_with_cusum_alarms
-from modules.seasonal_lambda import estimate_lambda_for_season
+# from modules.seasonal_lambda import estimate_lambda_for_season
 from modules.synthetic_year_generator import generate_synthetic_year, generate_synthetic_year_with_spikes_smooth, generate_spike_report
 from modules.cusum_threshold import design_cusum_threshold_analytic, estimate_metrics_mc, compare_analytic_vs_mc_extended,save_comparison_to_csv,save_comparison_to_excel, find_h_from_delta_arl1, compute_arl0_from_delta_arl1, build_tables_h_delta_arl1, fit_new_approximations, run_arl0_delta_experiment, run_arl1_delta_experiment, run_arl1_target_delta_experiment, run_arl0_arl1_delta_experiment
 import numpy as np
 
 def main():
 
-    # # Конвертировать xlsx в csv
-    # input_dir = Path("KASANT/modify")
-    # output_dir = Path("KASANT/csv")
-    # convert_excels(input_dir, output_dir)
+    # Конвертировать xlsx в csv c сохранением всех полей (даже если они не в стандарте)
+    input_dir = Path("KASANT/original/xlsx")
+    output_dir = Path("KASANT/original/csv")
+    all_events_file = Path("KASANT/original/union/all_events.csv")
+    convert_xlsx_to_csv_keep_all_fields(input_dir, output_dir)
+
+    # Сравнение структур CSV-файлов (проверка на одинаковые поля)
+    compare_csv_structures(output_dir, strict_order=True)
+
+    # Слияние всех CSV в один (для удобства анализа и создания фильтров)
+    merge_csv_files(output_dir, all_events_file)
+
+
 
     # # Создание фильтров
     csv_dir = Path("KASANT/csv")
@@ -457,23 +466,23 @@ def main():
     #                 n_workers=n_workers,
     #             )
 
-    run_cusum_exp_from_csv(
-        csv_path=Path("KASANT/calculation/synthetic_spike/synthetic_smooth_Октябрьская_3_2025.csv"),
-        delta_target=3.0,
-        arl0_target=200,
-        window_size=30,
-        cooldown_after_alarm=30,
-        h_json_dir=Path("KASANT/cusum_optimization/dynamic"),
-        out_dir=Path("KASANT/cusum_results/"),
-    )
-
-    df_full = pd.read_csv("KASANT/cusum_results/synthetic_smooth_Октябрьская_3_2025_cusum_full.csv")
-
-    plot_cumulative_events_with_cusum_alarms(
-        df=df_full,
-        save_dir=Path("KASANT/cusum_results/graphs"),
-        filename_stem="Октябрьская_3_2025"
-    )
+    # run_cusum_exp_from_csv(
+    #     csv_path=Path("KASANT/calculation/synthetic_spike/synthetic_smooth_Октябрьская_3_2025.csv"),
+    #     delta_target=3.0,
+    #     arl0_target=200,
+    #     window_size=30,
+    #     cooldown_after_alarm=30,
+    #     h_json_dir=Path("KASANT/cusum_optimization/dynamic"),
+    #     out_dir=Path("KASANT/cusum_results/"),
+    # )
+    #
+    # df_full = pd.read_csv("KASANT/cusum_results/synthetic_smooth_Октябрьская_3_2025_cusum_full.csv")
+    #
+    # plot_cumulative_events_with_cusum_alarms(
+    #     df=df_full,
+    #     save_dir=Path("KASANT/cusum_results/graphs"),
+    #     filename_stem="Октябрьская_3_2025"
+    # )
 
 
 if __name__ == "__main__":
