@@ -1,6 +1,6 @@
 from pathlib import Path
 import pandas as pd
-from modules.converter import convert_excels, convert_xlsx_to_csv_keep_all_fields, compare_csv_structures, merge_csv_files
+from modules.converter import convert_excels, convert_xlsx_to_csv_keep_all_fields, compare_csv_structures, merge_csv_files, remove_nbsp_from_csv
 from modules.cusum_exp_seasonal import run_cusum_exp_from_csv
 from modules.filter_manager import create_filters, load_filtered_dataframe
 from modules.report_counter import generate_count_reports, generate_time_distribution_report
@@ -13,27 +13,29 @@ import numpy as np
 
 def main():
 
-    # Конвертировать xlsx в csv c сохранением всех полей (даже если они не в стандарте)
-    input_dir = Path("KASANT/original/xlsx")
-    output_dir = Path("KASANT/original/csv")
+    # # Конвертировать xlsx в csv c сохранением всех полей (даже если они не в стандарте)
+    # input_dir = Path("KASANT/original/xlsx")
+    # output_dir = Path("KASANT/original/csv")
+    # all_events_file = Path("KASANT/original/union/all_events.csv")
+    # convert_xlsx_to_csv_keep_all_fields(input_dir, output_dir)
+    #
+    # # Сравнение структур CSV-файлов (проверка на одинаковые поля)
+    # compare_csv_structures(output_dir, strict_order=True)
+    #
+    # # Слияние всех CSV в один (для удобства анализа и создания фильтров)
+    # merge_csv_files(output_dir, all_events_file)
+
+    # Удаление неразрывного пробела (NBSP) из объединённого CSV, если он там есть
     all_events_file = Path("KASANT/original/union/all_events.csv")
-    convert_xlsx_to_csv_keep_all_fields(input_dir, output_dir)
+    remove_nbsp_from_csv(all_events_file)
 
-    # Сравнение структур CSV-файлов (проверка на одинаковые поля)
-    compare_csv_structures(output_dir, strict_order=True)
+    # Создание фильтров
+    filters_dir = Path("KASANT/filters")
+    all_events_file = Path("KASANT/original/union/all_events.csv")
 
-    # Слияние всех CSV в один (для удобства анализа и создания фильтров)
-    merge_csv_files(output_dir, all_events_file)
+    # Создать фильтры
+    create_filters(all_events_file, filters_dir)
 
-
-
-    # # Создание фильтров
-    csv_dir = Path("KASANT/csv")
-    # filters_dir = Path("KASANT/filters")
-    #
-    # # Создать фильтры
-    # create_filters(csv_dir, filters_dir)
-    #
     # # Отчет с подсчетом событий
     # reports_dir = Path("reports/count")
     # generate_count_reports(csv_dir, reports_dir)

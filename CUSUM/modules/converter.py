@@ -431,3 +431,32 @@ def merge_csv_files(input_dir: Path, output_file: Path) -> None:
     print(f"\n✅ Объединено файлов: {len(dfs)}")
     print(f"📄 Итоговый файл: {output_file}")
     print(f"📊 Всего строк: {len(merged_df)}")
+
+def remove_nbsp_from_csv(csv_path: Path) -> None:
+    """
+    Удаляет неразрывные пробелы (NBSP, \u00A0) из CSV файла.
+
+    Заменяет NBSP на обычный пробел и удаляет лишние пробелы
+    во всех строковых колонках.
+    """
+
+    if not csv_path.exists():
+        print(f"❌ Файл не найден: {csv_path}")
+        return
+
+    print(f"→ Очистка NBSP: {csv_path.name}")
+
+    df = pd.read_csv(csv_path, encoding="utf-8-sig")
+
+    for col in df.select_dtypes(include="object").columns:
+        df[col] = (
+            df[col]
+            .astype(str)
+            .str.replace("\u00A0", " ", regex=False)
+            .str.replace(r"\s+", " ", regex=True)
+            .str.strip()
+        )
+
+    df.to_csv(csv_path, index=False, encoding="utf-8-sig")
+
+    print("✅ NBSP успешно удалены")
