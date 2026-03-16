@@ -2,219 +2,369 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 import matplotlib.pyplot as plt
+from statsmodels.stats.diagnostic import acorr_ljungbox
 
 
 # ============================================================
 # 1) Обработка одного файла + сохранение обновлённого CSV
 # ============================================================
-def preprocess_dataframe(csv_file: Path, save_dir: Path = None):
+def preprocess_dataframe(source_dirs: list[Path], save_dirs: list[Path]) -> None:
     """
-    Загружает CSV, рассчитывает DELTA_TIME, DELTA_MINUTES, TIME_DIFF, INDEX
-    и сохраняет обновлённый CSV в save_dir.
+    Обрабатывает CSV-файлы из списка папок и сохраняет результаты
+    в соответствующие папки.
 
-    Возвращает обработанный DataFrame.
+    Добавляемые поля:
+        DELTA_TIME
+        DELTA_MINUTES
+        TIME_DIFF
+        EVENT_NUMBER
+        INDEX
+
+    Параметры:
+        source_dirs : список папок с исходными CSV
+        save_dirs   : список папок для сохранения обработанных CSV
     """
 
-    df = pd.read_csv(csv_file)
+    if len(source_dirs) != len(save_dirs):
+        raise ValueError("source_dirs и save_dirs должны быть одинаковой длины")
 
-    # Преобразование времени
-    df["START_TIME"] = pd.to_datetime(df["START_TIME"], errors="coerce")
+    for source_dir, save_dir in zip(source_dirs, save_dirs):
 
-    # Сортировка по времени
-    df = df.sort_values("START_TIME").reset_index(drop=True)
+        source_dir = Path(source_dir)
+        save_dir = Path(save_dir)
 
-    # DELTA_TIME — timedelta от первого события
-    df["DELTA_TIME"] = df["START_TIME"] - df["START_TIME"].iloc[0]
+        if not source_dir.exists():
+            print(f"⚠️ Папка не найдена: {source_dir}")
+            continue
 
-    # DELTA_MINUTES
-    df["DELTA_MINUTES"] = df["DELTA_TIME"].dt.total_seconds() / 60
-
-    # TIME_DIFF — разница между соседними событиями
-    df["TIME_DIFF"] = df["DELTA_MINUTES"].diff().fillna(0)
-
-    # INDEX — нормированный индекс
-    df["INDEX"] = df.index / len(df)
-
-    # ---------------- Сохранение файла ----------------
-    if save_dir is not None:
         save_dir.mkdir(parents=True, exist_ok=True)
 
-        out_path = save_dir / csv_file.name
-        df.to_csv(out_path, index=False, encoding="utf-8-sig")
+        csv_files = sorted(source_dir.glob("*.csv"))
 
-        print(f"💾 Обработанный CSV сохранён: {out_path}")
+        if not csv_files:
+            print(f"⚠️ Нет CSV файлов в папке: {source_dir}")
+            continue
 
-    return df
+        print(f"\n📂 Обработка папки: {source_dir}")
+
+        for csv_file in csv_files:
+
+            try:
+                df = pd.read_csv(csv_file, encoding="utf-8-sig")
+
+                if "START_TIME" not in df.columns:
+                    print(f"⚠️ В файле нет START_TIME: {csv_file.name}")
+                    continue
+
+                # преобразуем время
+                df["START_TIME"] = pd.to_datetime(df["START_TIME"], errors="coerce")
+
+                # удаляем строки без времени
+                df = df[df["START_TIME"].notna()].copy()
+
+                if df.empty:
+                    print(f"⚠️ Пустой файл после очистки дат: {csv_file.name}")
+                    continue
+
+                # сортировка по времени
+                df = df.sort_values("START_TIME").reset_index(drop=True)
+
+                first_time = df["START_TIME"].iloc[0]
+
+                # время от первого события
+                df["DELTA_TIME"] = df["START_TIME"] - first_time
+
+                # минуты от первого события
+                df["DELTA_MINUTES"] = df["DELTA_TIME"].dt.total_seconds() / 60
+
+                # разница между событиями
+                df["TIME_DIFF"] = df["DELTA_MINUTES"].diff().fillna(0)
+
+                # номер события
+                df["EVENT_NUMBER"] = range(1, len(df) + 1)
+
+                # нормированный индекс
+                if len(df) > 1:
+                    df["INDEX"] = df.index / (len(df) - 1)
+                else:
+                    df["INDEX"] = 1.0
+
+                out_path = save_dir / csv_file.name
+                df.to_csv(out_path, index=False, encoding="utf-8-sig")
+
+                print(f"✅ Сохранён: {out_path}")
+
+            except Exception as e:
+                print(f"❌ Ошибка обработки {csv_file.name}: {e}")
 
 
 # ============================================================
 # 2) Гистограмма TIME_DIFF
 # ============================================================
-def save_histogram(df: pd.DataFrame, graph_dir: Path, file_name: str):
+def save_histogram(source_dirs: list[Path], graph_dirs: list[Path]) -> None:
     """
-    Строит гистограмму TIME_DIFF начиная с 0.
-    DPI и hist_step подбираются автоматически под размер выборки.
+    Строит гистограммы TIME_DIFF для всех CSV-файлов из списка папок
+    и сохраняет их в соответствующие папки.
+
+    Параметры:
+        source_dirs : список папок с исходными CSV
+        graph_dirs  : список папок для сохранения PDF-гистограмм
+
+    Важно:
+        source_dirs и graph_dirs должны быть одинаковой длины.
     """
 
-    graph_dir.mkdir(parents=True, exist_ok=True)
-    out_path = graph_dir / f"{file_name}.pdf"
+    if len(source_dirs) != len(graph_dirs):
+        raise ValueError("source_dirs и graph_dirs должны быть одинаковой длины")
 
-    n = len(df)
-    tmax = df["TIME_DIFF"].max()
+    for source_dir, graph_dir in zip(source_dirs, graph_dirs):
+        source_dir = Path(source_dir)
+        graph_dir = Path(graph_dir)
 
-    # ---------------------------
-    # 1) Автоматический выбор DPI
-    # ---------------------------
-    if n < 500:
-        dpi = 150
-    elif n < 5000:
-        dpi = 200
-    elif n < 50000:
-        dpi = 300
-    else:
-        dpi = 400
+        if not source_dir.exists():
+            print(f"⚠️ Папка не найдена: {source_dir}")
+            continue
 
-    # ---------------------------
-    # 2) Автоматический выбор hist_step
-    # ---------------------------
-    if n < 500:
-        hist_step = max(2, tmax / 20)     # 20 бинов
-    elif n < 5000:
-        hist_step = max(1, tmax / 40)     # 40 бинов
-    elif n < 50000:
-        hist_step = max(0.5, tmax / 60)   # 60 бинов
-    else:
-        hist_step = max(0.25, tmax / 80)  # 80 бинов
+        graph_dir.mkdir(parents=True, exist_ok=True)
 
-    # округляем шаг до красивого числа
-    if hist_step > 10:
-        hist_step = round(hist_step, -1)   # десятки
-    elif hist_step > 1:
-        hist_step = round(hist_step, 1)    # десятые
-    else:
-        hist_step = round(hist_step, 2)    # сотые
+        csv_files = sorted(source_dir.glob("*.csv"))
+        if not csv_files:
+            print(f"⚠️ Нет CSV файлов в папке: {source_dir}")
+            continue
 
-    print(f"📌 Автонастройка: n={n}, max={tmax:.2f}, hist_step={hist_step}, dpi={dpi}")
+        print(f"\n📂 Построение гистограмм для папки: {source_dir}")
 
-    # --------- Бины -----------
-    xmin = 0
-    xmax = ((tmax // hist_step) + 1) * hist_step
-    bin_edges = np.arange(xmin, xmax + hist_step, hist_step)
+        for csv_file in csv_files:
+            try:
+                df = pd.read_csv(csv_file, encoding="utf-8-sig")
 
-    # --------- Построение ---------
-    plt.figure(figsize=(10, 5))
-    plt.hist(df["TIME_DIFF"], bins=bin_edges,
-             edgecolor='black', alpha=0.7)
+                if "TIME_DIFF" not in df.columns:
+                    print(f"⚠️ В файле нет TIME_DIFF: {csv_file.name}")
+                    continue
 
-    plt.xlabel("Интервалы между событиями (мин)")
-    plt.ylabel("Частота")
-    plt.title(f"Гистограмма TIME_DIFF — {file_name}")
-    plt.grid(axis='y', linestyle='--', alpha=0.6)
-    plt.xlim(xmin, xmax)
+                time_diff = pd.to_numeric(df["TIME_DIFF"], errors="coerce").dropna()
 
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=dpi, bbox_inches="tight")
-    plt.close()
+                if time_diff.empty:
+                    print(f"⚠️ Нет валидных значений TIME_DIFF: {csv_file.name}")
+                    continue
 
-    print(f"📊 Гистограмма сохранена: {out_path}")
+                file_name = csv_file.stem
+                out_path = graph_dir / f"{file_name}.pdf"
 
-    return out_path
+                n = len(time_diff)
+                tmax = time_diff.max()
+
+                # 1) Автоматический выбор DPI
+                if n < 500:
+                    dpi = 150
+                elif n < 5000:
+                    dpi = 200
+                elif n < 50000:
+                    dpi = 300
+                else:
+                    dpi = 400
+
+                # 2) Автоматический выбор hist_step
+                if n < 500:
+                    hist_step = max(2, tmax / 20)
+                elif n < 5000:
+                    hist_step = max(1, tmax / 40)
+                elif n < 50000:
+                    hist_step = max(0.5, tmax / 60)
+                else:
+                    hist_step = max(0.25, tmax / 80)
+
+                # округляем шаг до "красивого" числа
+                if hist_step > 10:
+                    hist_step = round(hist_step, -1)
+                elif hist_step > 1:
+                    hist_step = round(hist_step, 1)
+                else:
+                    hist_step = round(hist_step, 2)
+
+                # защита от нулевого шага / пустого диапазона
+                if hist_step <= 0:
+                    hist_step = 1
+
+                xmin = 0
+                xmax = max(hist_step, ((tmax // hist_step) + 1) * hist_step)
+                bin_edges = np.arange(xmin, xmax + hist_step, hist_step)
+
+                print(
+                    f"📌 {csv_file.name}: "
+                    f"n={n}, max={tmax:.2f}, hist_step={hist_step}, dpi={dpi}"
+                )
+
+                plt.figure(figsize=(10, 5))
+                plt.hist(
+                    time_diff,
+                    bins=bin_edges,
+                    edgecolor="black",
+                    alpha=0.7,
+                )
+
+                plt.xlabel("Интервалы между событиями (мин)")
+                plt.ylabel("Частота")
+                plt.title(f"Гистограмма TIME_DIFF — {file_name}")
+                plt.grid(axis="y", linestyle="--", alpha=0.6)
+                plt.xlim(xmin, xmax)
+
+                plt.tight_layout()
+                plt.savefig(out_path, dpi=dpi, bbox_inches="tight")
+                plt.close()
+
+                print(f"📊 Гистограмма сохранена: {out_path}")
+
+            except Exception as e:
+                print(f"❌ Ошибка построения гистограммы для {csv_file.name}: {e}")
 
 # ============================================================
 # 3) График НЧС
 # ============================================================
-
-def plot_cumulative_events(df: pd.DataFrame, graph_dir: Path, file_name: str):
+def plot_cumulative_events(source_dirs: list[Path], graph_dirs: list[Path]) -> None:
     """
-    Строит график накопленного числа событий:
+    Строит графики накопленного числа событий для всех CSV-файлов
+    из списка папок и сохраняет их в соответствующие папки.
+
+    Для каждого файла строится график:
       - INDEX по START_TIME
       - квартальные линии
       - сезонные линии
       - горизонтальная линия y=1
       - обрезка графика по последнему событию
+
+    Параметры:
+        source_dirs : список папок с исходными CSV
+        graph_dirs  : список папок для сохранения PDF-графиков
+
+    Важно:
+        source_dirs и graph_dirs должны быть одинаковой длины.
     """
 
-    graph_dir.mkdir(parents=True, exist_ok=True)
-    out_path = graph_dir / f"{file_name}_cumulative.pdf"
+    if len(source_dirs) != len(graph_dirs):
+        raise ValueError("source_dirs и graph_dirs должны быть одинаковой длины")
 
-    plt.figure(figsize=(12, 6))
+    for source_dir, graph_dir in zip(source_dirs, graph_dirs):
+        source_dir = Path(source_dir)
+        graph_dir = Path(graph_dir)
 
-    # === 1. График INDEX ===
-    plt.plot(
-        df["START_TIME"], df["INDEX"],
-        linewidth=2, color="black",
-        label="Накопленное число событий"
-    )
+        if not source_dir.exists():
+            print(f"⚠️ Папка не найдена: {source_dir}")
+            continue
 
-    # Диапазон времени
-    start = df["START_TIME"].min().normalize()
-    end = df["START_TIME"].max().normalize()
+        graph_dir.mkdir(parents=True, exist_ok=True)
 
-    # === 2. Квартальные линии ===
-    quarter_starts = pd.date_range(start=start, end=end, freq="QS")
+        csv_files = sorted(source_dir.glob("*.csv"))
+        if not csv_files:
+            print(f"⚠️ Нет CSV файлов в папке: {source_dir}")
+            continue
 
-    for i, q in enumerate(quarter_starts):
-        if start <= q <= end:
-            plt.axvline(
-                q,
-                linestyle="--",
-                color="gray",
-                linewidth=1.2,
-                alpha=0.7,
-                label="Квартальная граница" if i == 0 else None
-            )
+        print(f"\n📂 Построение cumulative-графиков для папки: {source_dir}")
 
-    # === 3. Сезонные линии ===
-    season_offsets = [(3, 1), (6, 1), (9, 1), (12, 1)]
-    season_names = ["Весна", "Лето", "Осень", "Зима"]
+        for csv_file in csv_files:
+            try:
+                df = pd.read_csv(csv_file, encoding="utf-8-sig")
 
-    years = range(start.year, end.year + 1)
-    season_lines = []
+                required_cols = {"START_TIME", "INDEX"}
+                missing_cols = required_cols - set(df.columns)
+                if missing_cols:
+                    print(f"⚠️ В файле {csv_file.name} нет колонок: {sorted(missing_cols)}")
+                    continue
 
-    for year in years:
-        for (month, day), name in zip(season_offsets, season_names):
-            season_date = pd.Timestamp(year, month, day)
-            if start <= season_date <= end:
-                season_lines.append((season_date, name))
+                df["START_TIME"] = pd.to_datetime(df["START_TIME"], errors="coerce")
+                df["INDEX"] = pd.to_numeric(df["INDEX"], errors="coerce")
 
-    for i, (d, name) in enumerate(season_lines):
-        plt.axvline(
-            d,
-            linestyle=":",
-            color="tab:blue",
-            linewidth=1.4,
-            alpha=0.8,
-            label="Сезон" if i == 0 else None
-        )
+                df = df[df["START_TIME"].notna() & df["INDEX"].notna()].copy()
 
-    # === 4. Горизонтальная линия y = 1 ===
-    plt.axhline(1, color="black", linewidth=1.2, linestyle="--", alpha=0.7)
+                if df.empty:
+                    print(f"⚠️ Нет валидных данных для графика: {csv_file.name}")
+                    continue
 
-    # === 5. Границы графика ===
-    first_time = df["START_TIME"].min()
-    last_time = df["START_TIME"].max()
+                df = df.sort_values("START_TIME").reset_index(drop=True)
 
-    plt.xlim(first_time, last_time)
-    plt.ylim(0, 1)
+                file_name = csv_file.stem
+                out_path = graph_dir / f"{file_name}_cumulative.pdf"
 
-    # === 6. Подписи и стиль ===
-    plt.title("График накопленного числа событий", fontsize=14)
-    plt.xlabel("Время", fontsize=12)
-    plt.ylabel("Нормированный индекс событий", fontsize=12)
-    plt.grid(alpha=0.4)
+                plt.figure(figsize=(12, 6))
 
-    # === 7. Убираем дубликаты в легенде ===
-    handles, labels = plt.gca().get_legend_handles_labels()
-    by_label = dict(zip(labels, handles))
-    plt.legend(by_label.values(), by_label.keys(), loc="upper left")
+                # 1. График INDEX
+                plt.plot(
+                    df["START_TIME"],
+                    df["INDEX"],
+                    linewidth=2,
+                    color="black",
+                    label="Накопленное число событий"
+                )
 
-    # === 8. Сохранение ===
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=300, bbox_inches="tight")
-    plt.close()
+                # Диапазон времени
+                start = df["START_TIME"].min().normalize()
+                end = df["START_TIME"].max().normalize()
 
-    print(f"📈 График накопленного числа событий сохранён: {out_path}")
-    return out_path
+                # 2. Квартальные линии
+                quarter_starts = pd.date_range(start=start, end=end, freq="QS")
+
+                for i, q in enumerate(quarter_starts):
+                    if start <= q <= end:
+                        plt.axvline(
+                            q,
+                            linestyle="--",
+                            color="gray",
+                            linewidth=1.2,
+                            alpha=0.7,
+                            label="Квартальная граница" if i == 0 else None
+                        )
+
+                # 3. Сезонные линии
+                season_offsets = [(3, 1), (6, 1), (9, 1), (12, 1)]
+                years = range(start.year, end.year + 1)
+                season_lines = []
+
+                for year in years:
+                    for month, day in season_offsets:
+                        season_date = pd.Timestamp(year, month, day)
+                        if start <= season_date <= end:
+                            season_lines.append(season_date)
+
+                for i, d in enumerate(season_lines):
+                    plt.axvline(
+                        d,
+                        linestyle=":",
+                        color="tab:blue",
+                        linewidth=1.4,
+                        alpha=0.8,
+                        label="Сезон" if i == 0 else None
+                    )
+
+                # 4. Горизонтальная линия y = 1
+                plt.axhline(1, color="black", linewidth=1.2, linestyle="--", alpha=0.7)
+
+                # 5. Границы графика
+                first_time = df["START_TIME"].min()
+                last_time = df["START_TIME"].max()
+
+                plt.xlim(first_time, last_time)
+                plt.ylim(0, 1)
+
+                # 6. Подписи и стиль
+                plt.title("График накопленного числа событий", fontsize=14)
+                plt.xlabel("Время", fontsize=12)
+                plt.ylabel("Нормированный индекс событий", fontsize=12)
+                plt.grid(alpha=0.4)
+
+                # 7. Убираем дубликаты в легенде
+                handles, labels = plt.gca().get_legend_handles_labels()
+                by_label = dict(zip(labels, handles))
+                plt.legend(by_label.values(), by_label.keys(), loc="upper left")
+
+                # 8. Сохранение
+                plt.tight_layout()
+                plt.savefig(out_path, dpi=300, bbox_inches="tight")
+                plt.close()
+
+                print(f"📈 График сохранён: {out_path}")
+
+            except Exception as e:
+                print(f"❌ Ошибка построения графика для {csv_file.name}: {e}")
 
 def plot_cumulative_events_with_lambda(df, save_dir: Path, filename_stem: str):
     """
@@ -414,6 +564,152 @@ def plot_cumulative_events_with_cusum_alarms(
     print(f"📈 CUSUM-график с периодами всплесков сохранён: {out_path}")
 
     return out_path
+
+# Функция для оценки коэффициента авторегрессии первого порядка (rho) по полю TIME_DIFF и теста Ljung–Box для всех CSV-файлов в нескольких папках, с сохранением отчёта в итоговый CSV.
+def estimate_ar1_for_directories(
+    source_dirs: list[Path],
+    output_csv: Path,
+    ljung_box_lags: int = 10,
+) -> None:
+    """
+    Рассчитывает коэффициент авторегрессии первого порядка (RHO_AR1)
+    по полю TIME_DIFF для всех CSV-файлов в нескольких папках
+    и дополнительно выполняет тест Ljung–Box.
+
+    Параметры:
+        source_dirs      : список папок с CSV-файлами
+        output_csv       : путь к итоговому CSV-отчёту
+        ljung_box_lags   : число лагов для теста Ljung–Box
+
+    В итоговый CSV записываются:
+        SOURCE_DIR
+        FILE_NAME
+        ROWS_TOTAL
+        ROWS_VALID
+        TIME_DIFF_MEAN
+        TIME_DIFF_STD
+        RHO_AR1
+        LJUNG_BOX_LAGS
+        LJUNG_BOX_PVALUE
+        LJUNG_BOX_AUTOCORR
+    """
+
+    records = []
+
+    for source_dir in source_dirs:
+        source_dir = Path(source_dir)
+
+        if not source_dir.exists():
+            print(f"⚠️ Папка не найдена: {source_dir}")
+            continue
+
+        csv_files = sorted(source_dir.glob("*.csv"))
+        if not csv_files:
+            print(f"⚠️ Нет CSV файлов в папке: {source_dir}")
+            continue
+
+        print(f"\n📂 Анализ папки: {source_dir}")
+
+        for csv_file in csv_files:
+            try:
+                df = pd.read_csv(csv_file, encoding="utf-8-sig")
+
+                if "TIME_DIFF" not in df.columns:
+                    print(f"⚠️ В файле нет TIME_DIFF: {csv_file.name}")
+                    continue
+
+                x = pd.to_numeric(df["TIME_DIFF"], errors="coerce").dropna().to_numpy()
+
+                rows_total = len(df)
+                rows_valid = len(x)
+
+                if rows_valid < 3:
+                    print(f"⚠️ Недостаточно данных для оценки rho: {csv_file.name}")
+                    records.append({
+                        "SOURCE_DIR": str(source_dir),
+                        "FILE_NAME": csv_file.name,
+                        "ROWS_TOTAL": rows_total,
+                        "ROWS_VALID": rows_valid,
+                        "TIME_DIFF_MEAN": np.nan,
+                        "TIME_DIFF_STD": np.nan,
+                        "RHO_AR1": np.nan,
+                        "LJUNG_BOX_LAGS": ljung_box_lags,
+                        "LJUNG_BOX_PVALUE": np.nan,
+                        "LJUNG_BOX_AUTOCORR": np.nan,
+                    })
+                    continue
+
+                # --- Оценка RHO_AR1 ---
+                x_mean = np.mean(x)
+                numerator = np.sum((x[1:] - x_mean) * (x[:-1] - x_mean))
+                denominator = np.sum((x - x_mean) ** 2)
+
+                rho = np.nan if denominator == 0 else numerator / denominator
+
+                # --- Тест Ljung–Box ---
+                # число лагов не должно быть >= длины ряда
+                lb_lags = min(ljung_box_lags, max(1, rows_valid - 1))
+
+                if rows_valid < 5:
+                    lb_pvalue = np.nan
+                    lb_autocorr = np.nan
+                else:
+                    lb_result = acorr_ljungbox(x, lags=[lb_lags], return_df=True)
+                    lb_pvalue = float(lb_result["lb_pvalue"].iloc[0])
+                    lb_autocorr = lb_pvalue <= 0.05
+
+                records.append({
+                    "SOURCE_DIR": str(source_dir),
+                    "FILE_NAME": csv_file.name,
+                    "ROWS_TOTAL": rows_total,
+                    "ROWS_VALID": rows_valid,
+                    "TIME_DIFF_MEAN": float(np.mean(x)),
+                    "TIME_DIFF_STD": float(np.std(x, ddof=1)) if rows_valid > 1 else np.nan,
+                    "RHO_AR1": float(rho) if pd.notna(rho) else np.nan,
+                    "LJUNG_BOX_LAGS": lb_lags,
+                    "LJUNG_BOX_PVALUE": lb_pvalue,
+                    "LJUNG_BOX_AUTOCORR": lb_autocorr,
+                })
+
+                rho_str = f"{rho:.4f}" if pd.notna(rho) else "nan"
+                pval_str = f"{lb_pvalue:.4f}" if pd.notna(lb_pvalue) else "nan"
+
+                print(
+                    f"✅ {csv_file.name}: "
+                    f"rho = {rho_str}, "
+                    f"Ljung–Box p-value = {pval_str}"
+                )
+
+            except Exception as e:
+                print(f"❌ Ошибка обработки {csv_file.name}: {e}")
+                records.append({
+                    "SOURCE_DIR": str(source_dir),
+                    "FILE_NAME": csv_file.name,
+                    "ROWS_TOTAL": np.nan,
+                    "ROWS_VALID": np.nan,
+                    "TIME_DIFF_MEAN": np.nan,
+                    "TIME_DIFF_STD": np.nan,
+                    "RHO_AR1": np.nan,
+                    "LJUNG_BOX_LAGS": ljung_box_lags,
+                    "LJUNG_BOX_PVALUE": np.nan,
+                    "LJUNG_BOX_AUTOCORR": np.nan,
+                })
+
+    if not records:
+        print("❌ Нет данных для формирования отчёта")
+        return
+
+    report_df = pd.DataFrame(records)
+
+    report_df = report_df.sort_values(
+        by=["SOURCE_DIR", "FILE_NAME"],
+        kind="stable"
+    ).reset_index(drop=True)
+
+    output_csv.parent.mkdir(parents=True, exist_ok=True)
+    report_df.to_csv(output_csv, index=False, encoding="utf-8-sig")
+
+    print(f"\n📄 Отчёт сохранён: {output_csv}")
 
 
 

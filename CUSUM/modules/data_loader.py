@@ -1,5 +1,6 @@
 import pandas as pd
 from pathlib import Path
+import json
 
 
 # ============================================================
@@ -30,63 +31,164 @@ def _save_result_df(df: pd.DataFrame, out_dir: Path, prefix: str, **params):
 # 1) Получить DF — DEPT + YEAR + ROAD + CATEGORY
 # ============================================================
 def get_df_full_filter(
-    csv_dir: Path,
-    department: str = None,
-    year: str = None,
-    road: str = None,
-    category: str = None,
-    save_dir: Path = None
-):
+    all_csv_path: Path,
+    departments_json_path: Path,
+    roads_json_path: Path,
+    years_json_path: Path,
+    output_dir: Path,
+) -> None:
     """
-    Формирует DataFrame для одного года и сохраняет CSV.
+    На основе общего файла all_events.csv и JSON-фильтров формирует отдельные CSV
+    со списком событий по комбинациям:
+
+        1. DEPARTMENT + YEAR
+        2. ROAD + YEAR
+
+    Параметры:
+        all_csv_path: путь до общего файла all_events.csv
+        departments_json_path: путь до departments.json
+        roads_json_path: путь до roads.json
+        years_json_path: путь до years.json
+        output_dir: путь до папки для результирующих CSV
+
+    Результат:
+        output_dir/
+            by_department_year/
+                CSH_2023.csv
+                CSH_2024.csv
+                CT_2023.csv
+                ...
+            by_road_year/
+                Октябрьская_жд_2023.csv
+                Октябрьская_жд_2024.csv
+                ...
     """
-    files = list(csv_dir.glob("*.csv"))
-    dfs = []
 
-    for f in files:
-        parts = f.stem.split("_")
-        if len(parts) < 2:
-            continue
+    output_dir.mkdir(parents=True, exist_ok=True)
+    by_department_dir = output_dir / "by_department_year"
+    by_road_dir = output_dir / "by_road_year"
 
-        dept, yr = parts[0], parts[1]
+    by_department_dir.mkdir(parents=True, exist_ok=True)
+    by_road_dir.mkdir(parents=True, exist_ok=True)
 
-        if department and dept != department:
-            continue
-        if year and yr != year:
-            continue
+    if not all_csv_path.exists():
+        print(f"❌ Общий CSV не найден: {all_csv_path}")
+        return
 
-        df = pd.read_csv(f)
-        df["DEPARTMENT"] = dept
-        df["YEAR"] = yr
+    for p in (departments_json_path, roads_json_path, years_json_path):
+        if not p.exists():
+            print(f"❌ Файл фильтра не найден: {p}")
+            return
 
-        if road is not None:
-            df = df[df["ROAD"] == road]
+    with open(departments_json_path, "r", encoding="utf-8") as f:
+        departments = json.load(f)
 
-        if category is not None:
-            df = df[df["CATEGORY"].astype(str) == str(category)]
+    with open(roads_json_path, "r", encoding="utf-8") as f:
+        roads = json.load(f)
 
-        if len(df) > 0:
-            dfs.append(df)
+    with open(years_json_path, "r", encoding="utf-8") as f:
+        years = json.load(f)
 
-    if not dfs:
-        print("⚠️ Нет данных по заданным фильтрам")
-        return pd.DataFrame()
+    print(f"→ Чтение общего файла: {all_csv_path}")
+    df = pd.read_csv(all_csv_path, encoding="utf-8-sig")
 
-    df_result = pd.concat(dfs, ignore_index=True)
+    required_columns = {"DEPARTMENT", "ROAD"}
+    missing_cols = required_columns - set(df.columns)
+    if missing_cols:
+        print(f"❌ В CSV отсутствуют обязательные колонки: {sorted(missing_cols)}")
+        return
 
-    # ----------- Сохранение в CSV -----------
-    if save_dir:
-        _save_result_df(
-            df_result,
-            save_dir,
-            prefix="filtered",
-            department=department,
-            year=year,
-            road=road,
-            category=category
+    # Нормализация текстовых полей
+    for col in ("DEPARTMENT", "ROAD"):
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .astype(str)
+                .str.replace("\u00A0", " ", regex=False)
+                .str.replace(r"\s+", " ", regex=True)
+                .str.strip()
+            )
+
+    # YEAR: используем готовую колонку, либо извлекаем из START_TIME
+    if "YEAR" in df.columns:
+        df["YEAR"] = pd.to_numeric(df["YEAR"], errors="coerce").astype("Int64")
+    elif "START_TIME" in df.columns:
+        dt = pd.to_datetime(df["START_TIME"], errors="coerce")
+        df["YEAR"] = dt.dt.year.astype("Int64")
+    else:
+        print("❌ В CSV отсутствует колонка YEAR и нет START_TIME для её вычисления")
+        return
+
+    # Нормализуем years из json к int
+    years = [int(y) for y in years]
+
+    # Берём только строки, попадающие в фильтры
+    df = df[
+        df["DEPARTMENT"].isin(departments)
+        & df["ROAD"].isin(roads)
+        & df["YEAR"].isin(years)
+    ].copy()
+
+    if df.empty:
+        print("⚠️ Нет данных после применения фильтров JSON")
+        return
+
+    def _safe_name(value: str) -> str:
+        """Безопасное имя файла."""
+        return (
+            str(value)
+            .replace("\u00A0", " ")
+            .replace("/", "_")
+            .replace("\\", "_")
+            .replace(":", "_")
+            .replace("*", "_")
+            .replace("?", "_")
+            .replace('"', "_")
+            .replace("<", "_")
+            .replace(">", "_")
+            .replace("|", "_")
+            .replace(",", "")
+            .replace(".", "")
+            .strip()
         )
 
-    return df_result
+    # -------- CSV по комбинациям DEPARTMENT + YEAR --------
+    dep_count = 0
+    for department in departments:
+        for year in years:
+            df_part = df[
+                (df["DEPARTMENT"] == department)
+                & (df["YEAR"] == year)
+            ].copy()
+
+            if df_part.empty:
+                continue
+
+            out_path = by_department_dir / f"{_safe_name(department)}_{year}.csv"
+            df_part.to_csv(out_path, index=False, encoding="utf-8-sig")
+            dep_count += 1
+            print(f"  ✅ Сохранён: {out_path}")
+
+    # -------- CSV по комбинациям ROAD + YEAR --------
+    road_count = 0
+    for road in roads:
+        for year in years:
+            df_part = df[
+                (df["ROAD"] == road)
+                & (df["YEAR"] == year)
+            ].copy()
+
+            if df_part.empty:
+                continue
+
+            out_path = by_road_dir / f"{_safe_name(road)}_{year}.csv"
+            df_part.to_csv(out_path, index=False, encoding="utf-8-sig")
+            road_count += 1
+            print(f"  ✅ Сохранён: {out_path}")
+
+    print("\n🎉 Формирование CSV завершено.")
+    print(f"📁 Файлов по DEPARTMENT + YEAR: {dep_count}")
+    print(f"📁 Файлов по ROAD + YEAR: {road_count}")
 
 
 # ============================================================

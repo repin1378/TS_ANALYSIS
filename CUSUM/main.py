@@ -5,8 +5,8 @@ from modules.cusum_exp_seasonal import run_cusum_exp_from_csv
 from modules.filter_manager import create_filters, load_filtered_dataframe
 from modules.report_counter import generate_count_reports, generate_time_distribution_report
 from modules.data_loader import get_df_full_filter, get_df_multi_year
-from modules.preprocess import preprocess_dataframe, save_histogram, plot_cumulative_events, plot_cumulative_events_with_lambda, plot_cumulative_events_with_cusum_alarms
-# from modules.seasonal_lambda import estimate_lambda_for_season
+from modules.preprocess import preprocess_dataframe, save_histogram, plot_cumulative_events, plot_cumulative_events_with_lambda, plot_cumulative_events_with_cusum_alarms, estimate_ar1_for_directories
+from modules.seasonal_lambda import estimate_lambda_for_season
 from modules.synthetic_year_generator import generate_synthetic_year, generate_synthetic_year_with_spikes_smooth, generate_spike_report
 from modules.cusum_threshold import design_cusum_threshold_analytic, estimate_metrics_mc, compare_analytic_vs_mc_extended,save_comparison_to_csv,save_comparison_to_excel, find_h_from_delta_arl1, compute_arl0_from_delta_arl1, build_tables_h_delta_arl1, fit_new_approximations, run_arl0_delta_experiment, run_arl1_delta_experiment, run_arl1_target_delta_experiment, run_arl0_arl1_delta_experiment
 import numpy as np
@@ -25,20 +25,81 @@ def main():
     # # Слияние всех CSV в один (для удобства анализа и создания фильтров)
     # merge_csv_files(output_dir, all_events_file)
 
-    # Удаление неразрывного пробела (NBSP) из объединённого CSV, если он там есть
-    all_events_file = Path("KASANT/original/union/all_events.csv")
-    remove_nbsp_from_csv(all_events_file)
-
-    # Создание фильтров
-    filters_dir = Path("KASANT/filters")
-    all_events_file = Path("KASANT/original/union/all_events.csv")
-
-    # Создать фильтры
-    create_filters(all_events_file, filters_dir)
+    # # Удаление неразрывного пробела (NBSP) из объединённого CSV, если он там есть
+    # all_events_file = Path("KASANT/original/union/all_events.csv")
+    # remove_nbsp_from_csv(all_events_file)
+    #
+    # # Создание фильтров
+    # filters_dir = Path("KASANT/filters")
+    # all_events_file = Path("KASANT/original/union/all_events.csv")
+    #
+    # # Создать фильтры
+    # create_filters(all_events_file, filters_dir)
 
     # # Отчет с подсчетом событий
-    # reports_dir = Path("reports/count")
-    # generate_count_reports(csv_dir, reports_dir)
+    # generate_time_distribution_report(
+    #     all_csv_path=Path("KASANT/original/union/all_events.csv"),
+    #     departments_json_path=Path("KASANT/filters/departments.json"),
+    #     roads_json_path=Path("KASANT/filters/roads.json"),
+    #     years_json_path=Path("KASANT/filters/years.json"),
+    #     output_dir=Path("KASANT/reports/count"),
+    # )
+
+    # # Получение отфильтрованных DataFrame для разных комбинаций DEPARTMENT, YEAR, ROAD, CATEGORY
+    # get_df_full_filter(
+    #     all_csv_path=Path("KASANT/original/union/all_events.csv"),
+    #     departments_json_path=Path("KASANT/filters/departments.json"),
+    #     roads_json_path=Path("KASANT/filters/roads.json"),
+    #     years_json_path=Path("KASANT/filters/years.json"),
+    #     output_dir=Path("KASANT/data/filtered_by_department_year"),
+    # )
+
+    # Создание полей для гистограммы и НЧС
+    # # 1. Обработка CSV
+    # preprocess_dataframe(
+    #     source_dirs=[
+    #         Path("KASANT/data/filtered_by_department_year/by_department_year"),
+    #         Path("KASANT/data/filtered_by_department_year/by_road_year")
+    #     ],
+    #     save_dirs=[
+    #         Path("KASANT/processed/by_department_year"),
+    #         Path("KASANT/processed/by_road_year")
+    #     ]
+    # )
+
+    # # 2. Гистограмма
+    # save_histogram(
+    #     source_dirs=[
+    #         Path("KASANT/processed/by_department_year"),
+    #         Path("KASANT/processed/by_road_year"),
+    #     ],
+    #     graph_dirs=[
+    #         Path("KASANT/graphs/by_department_year"),
+    #         Path("KASANT/graphs/by_road_year"),
+    #     ],
+    # )
+    #
+    # # 3. График накопленного числа событий
+    # plot_cumulative_events(
+    #     source_dirs=[
+    #         Path("KASANT/processed/by_department_year"),
+    #         Path("KASANT/processed/by_road_year"),
+    #     ],
+    #     graph_dirs=[
+    #         Path("KASANT/graphs/by_department_year/cusum"),
+    #         Path("KASANT/graphs/by_road_year/cusum"),
+    #     ],
+    # )
+
+    # # Расчет AR(1) для всех DataFrame в указанных директориях и сохранение отчёта в CSV
+    # estimate_ar1_for_directories(
+    #     source_dirs=[
+    #         Path("KASANT/processed/by_department_year"),
+    #         Path("KASANT/processed/by_road_year"),
+    #     ],
+    #     output_csv=Path("KASANT/calculation/correlation/ar1_report.csv"),
+    #     ljung_box_lags=10
+    # )
 
 #=======================================================================================================================
 
