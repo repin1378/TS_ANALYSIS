@@ -5,7 +5,7 @@ from modules.cusum_exp_seasonal import run_cusum_exp_from_csv
 from modules.filter_manager import create_filters, load_filtered_dataframe
 from modules.report_counter import generate_count_reports, generate_time_distribution_report
 from modules.data_loader import get_df_full_filter, get_df_multi_year
-from modules.preprocess import preprocess_dataframe, save_histogram, plot_cumulative_events, plot_cumulative_events_with_lambda, plot_cumulative_events_with_cusum_alarms, estimate_ar1_for_directories
+from modules.preprocess import preprocess_dataframe, save_histogram, plot_cumulative_events, plot_cumulative_events_with_spike, plot_cumulative_events_with_cusum_alarms, estimate_ar1_for_directories
 from modules.seasonal_lambda import estimate_lambda_for_season
 from modules.synthetic_year_generator import generate_synthetic_year, generate_synthetic_year_with_spikes_smooth, generate_spike_report
 from modules.cusum_threshold import design_cusum_threshold_analytic, estimate_metrics_mc, compare_analytic_vs_mc_extended,save_comparison_to_csv,save_comparison_to_excel, find_h_from_delta_arl1, compute_arl0_from_delta_arl1, build_tables_h_delta_arl1, fit_new_approximations, run_arl0_delta_experiment, run_arl1_delta_experiment, run_arl1_target_delta_experiment, run_arl0_arl1_delta_experiment
@@ -145,17 +145,116 @@ def main():
     #     output_json_path=Path("KASANT/calculation/synthetic_for_road_json/road_responsibility_top.json"),
     #     top_n=5,
     # )
+    #
+    # #====== Создание JSON для железнодорожных простоев =======
+    #
+    # create_railway_timeout_reference_json(
+    #     csv_path=Path("KASANT/original/union/all_events.csv"),
+    #     output_json_path=Path("KASANT/calculation/synthetic_for_timeout_json/railway_timeout_reference.json"),
+    # )
+    #
+    # create_railway_timeout_reference_by_field_json(
+    #     csv_path=Path("KASANT/original/union/all_events.csv"),
+    #     output_json_dir=Path("KASANT/calculation/synthetic_for_timeout_json/railway_timeout"),
+    # )
 
-    #====== Создание JSON для железнодорожных простоев =======
+    # #====== Оценка λ₀ для сезонов по департаментам и дорогам =======
+    #
+    # estimate_lambda_for_season(
+    #     by_department_year_dir=Path("KASANT/processed/by_department_year"),
+    #     by_road_year_dir=Path("KASANT/processed/by_road_year"),
+    #     output_department_dir=Path("KASANT/calculation/lambda_0/by_department_year"),
+    #     output_road_dir=Path("KASANT/calculation/lambda_0/by_road_year"),
+    #     min_points=30,
+    #     ks_alpha=0.05,
+    # )
 
-    create_railway_timeout_reference_json(
-        csv_path=Path("KASANT/original/union/all_events.csv"),
-        output_json_path=Path("KASANT/calculation/synthetic_for_timeout_json/railway_timeout_reference.json"),
+    # #====== Генерация синтетических данных для 2025 года на основе оценок λ₀ =======
+    #
+    # generate_synthetic_year(
+    #     source_year=2024,
+    #     synthetic_year=2025,
+    #     input_department_dir=Path("KASANT/calculation/lambda_0/by_department_year"),
+    #     input_road_dir=Path("KASANT/calculation/lambda_0/by_road_year"),
+    #     output_department_dir=Path("KASANT/calculation/synthetic/by_department_year"),
+    #     output_road_dir=Path("KASANT/calculation/synthetic/by_road_year"),
+    #     random_seed=42,
+    # )
+    #
+    # #==== Гистограмма интервалов TIME_DIFF для синтетических данных ======
+    #
+    # save_histogram(
+    #     source_dirs=[
+    #         Path("KASANT/calculation/synthetic/by_department_year"),
+    #         Path("KASANT/calculation/synthetic/by_road_year"),
+    #     ],
+    #     graph_dirs=[
+    #         Path("KASANT/calculation/graphs/by_department_year"),
+    #         Path("KASANT/calculation/graphs/by_road_year"),
+    #     ],
+    # )
+    #
+    # #==== График накопленного числа событий для синтетических данных ======
+    #
+    # plot_cumulative_events(
+    #     source_dirs=[
+    #         Path("KASANT/calculation/synthetic/by_department_year"),
+    #         Path("KASANT/calculation/synthetic/by_road_year"),
+    #     ],
+    #     graph_dirs=[
+    #         Path("KASANT/calculation/graphs/cusum/by_department_year"),
+    #         Path("KASANT/calculation/graphs/cusum/by_road_year/cusum"),
+    #     ],
+    # )
+    #
+    #==== Генерация синтетических данных для 2025 года со всплесками на основе оценок λ₀ ======
+
+    generate_synthetic_year_with_spikes_smooth(
+        source_year=2024,
+        synthetic_year=2025,
+        input_department_dir=Path("KASANT/calculation/lambda_0/by_department_year"),
+        input_road_dir=Path("KASANT/calculation/lambda_0/by_road_year"),
+        output_department_dir=Path("KASANT/calculation/synthetic_spike/by_department_year"),
+        output_road_dir=Path("KASANT/calculation/synthetic_spike/by_road_year"),
+        delta=3.0,
+        spike_days=20,
+        transition_days=5,
+        k=2.0,
+        random_seed=42,
     )
 
-    create_railway_timeout_reference_by_field_json(
-        csv_path=Path("KASANT/original/union/all_events.csv"),
-        output_json_dir=Path("KASANT/calculation/synthetic_for_timeout_json/railway_timeout"),
+    #===== Создание отчета по синтетическим данным со всплесками ======
+
+    generate_spike_report(
+        input_department_dir=Path("KASANT/calculation/synthetic_spike/by_department_year"),
+        input_road_dir=Path("KASANT/calculation/synthetic_spike/by_road_year"),
+        output_department_dir=Path("KASANT/calculation/synthetic_spike_report/by_department_year"),
+        output_road_dir=Path("KASANT/calculation/synthetic_spike_report/by_road_year"),
+    )
+
+    #==== Гистограмма интервалов TIME_DIFF для синтетических данных с всплесками======
+
+    save_histogram(
+        source_dirs=[
+            Path("KASANT/calculation/synthetic_spike/by_department_year"),
+            Path("KASANT/calculation/synthetic_spike/by_road_year"),
+        ],
+        graph_dirs=[
+            Path("KASANT/calculation/graphs_spike/by_department_year"),
+            Path("KASANT/calculation/graphs_spike/by_road_year"),
+        ],
+    )
+
+    #==== График накопленного числа событий для синтетических данных со всплесками ======
+    plot_cumulative_events_with_spike(
+        source_dirs=[
+            Path("KASANT/calculation/synthetic_spike/by_department_year"),
+            Path("KASANT/calculation/synthetic_spike/by_road_year"),
+        ],
+        graph_dirs=[
+            Path("KASANT/calculation/graphs_spike/cusum/by_department_year"),
+            Path("KASANT/calculation/graphs_spike/cusum/by_road_year"),
+        ],
     )
 
 #===========Расчет λ₀ и тест KS для департаментов и дорог=================================================================
