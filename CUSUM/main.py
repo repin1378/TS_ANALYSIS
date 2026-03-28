@@ -9,6 +9,9 @@ from modules.preprocess import preprocess_dataframe, save_histogram, plot_cumula
 from modules.seasonal_lambda import estimate_lambda_for_season
 from modules.synthetic_year_generator import generate_synthetic_year, generate_synthetic_year_with_spikes_smooth, generate_spike_report
 from modules.cusum_threshold import design_cusum_threshold_analytic, estimate_metrics_mc, compare_analytic_vs_mc_extended,save_comparison_to_csv,save_comparison_to_excel, find_h_from_delta_arl1, compute_arl0_from_delta_arl1, build_tables_h_delta_arl1, fit_new_approximations, run_arl0_delta_experiment, run_arl1_delta_experiment, run_arl1_target_delta_experiment, run_arl0_arl1_delta_experiment
+from modules.synthetic_for_department import create_department_reason_top_json, create_department_road_top_json, create_department_responsibility_top_json
+from modules.synthetic_for_road import create_road_reason_top_json, create_road_department_top_json, create_road_responsibility_top_json
+from modules.synthetic_railway_timeout import create_railway_timeout_reference_json, create_railway_timeout_reference_by_field_json
 import numpy as np
 
 def main():
@@ -101,92 +104,61 @@ def main():
     #     ljung_box_lags=10
     # )
 
-#=======================================================================================================================
+#===========================Генерация синтетических данных============================================================================================
 
-    # # Сборка DataFrame
-    # # Пример: дорога, категория, год
-    # # Октябрьская (категории: 1,2,3)
-    # # Восточно-Сибирская (категории: 1,2,3)
-    # # Куйбышевская (категории: 2,3) - мало событий
-    # # Приволжская (категории: 2,3)
-    # # Северная (категории: 3)
-
-    # save_dir = Path("KASANT/data")
-    # # 1) Один год
-    # df_one_year = get_df_full_filter(
-    #     csv_dir,
-    #     #department="CSH",
-    #     year="2023",
-    #     category="3",
-    #     road="Приволжская",
-    #     save_dir=save_dir
+    # #======= Создание JSON для Департаментов =======
+    #
+    # create_department_reason_top_json(
+    #     csv_path=Path("KASANT/original/union/all_events.csv"),
+    #     output_json_path=Path("KASANT/calculation/synthetic_for_department_json/department_reason_top.json"),
+    #     top_n=20,
     # )
-    # print(df_one_year.head())
-    # print(df_one_year.count())
     #
-    # # Сборка DataFrame
-    # save_dir = Path("KASANT/data")
-    # # 1) Один год
-    # df_one_year = get_df_full_filter(
-    #     csv_dir,
-    #     #department="CSH",
-    #     year="2024",
-    #     category="3",
-    #     road="Приволжская",
-    #     save_dir=save_dir
+    # create_department_road_top_json(
+    #     csv_path=Path("KASANT/original/union/all_events.csv"),
+    #     output_json_path=Path("KASANT/calculation/synthetic_for_department_json/deppartment_road_top.json"),
+    #     top_n=10,
     # )
-    # print(df_one_year.head())
-    # print(df_one_year.count())
-
-
-    # # 2) Все годы вместе
-    # df_multi = get_df_multi_year(
-    #     csv_dir,
-    #     #department="CSH",
-    #     category="3",
-    #     road="Октябрьская",
-    #     save_dir = save_dir
+    #
+    # create_department_responsibility_top_json(
+    #     csv_path=Path("KASANT/original/union/all_events.csv"),
+    #     output_json_path=Path("KASANT/calculation/synthetic_for_department_json/department_responsibility_top.json"),
+    #     top_n=15,
     # )
-    # print(df_multi.head())
-    # print(df_multi.count())
-
-#=======================================================================================================================
-
-    # Создание полей для гистограммы и НЧС
-    # file = Path("KASANT/data/filtered_year-2024_road-Приволжская_category-3.csv")
-    # graphs_dir = Path("KASANT/graphs")
-    # processed_dir = Path("KASANT/processed")
     #
-    # # 1. Обработка CSV
-    # df = preprocess_dataframe(file, save_dir=processed_dir)
+    # #====== Создание JSON для Дорог =======
     #
-    # # 2. Гистограмма
-    # save_histogram(df, graphs_dir, file.stem)
+    # create_road_reason_top_json(
+    #     csv_path=Path("KASANT/original/union/all_events.csv"),
+    #     output_json_path=Path("KASANT/calculation/synthetic_for_road_json/road_reason_top.json"),
+    #     top_n=5,
+    # )
     #
-    # # 3. График накопленного числа событий
-    # plot_cumulative_events(df, graphs_dir, file.stem)
-
-#=======================================================================================================================
-
-    # csv_dir = Path("KASANT/csv")
-    # reports_dir = Path("reports/count")
+    # create_road_department_top_json(
+    #     csv_path=Path("KASANT/original/union/all_events.csv"),
+    #     output_json_path=Path("KASANT/calculation/synthetic_for_road_json/road_department_top.json"),
+    #     top_n=5,
+    # )
     #
-    # # Пример: дорога, категория, год
-    # # Октябрьская (категории: 1,2,3)
-    # # Восточно-Сибирская (категории: 1,2,3)
-    # # Куйбышевская (категории: 2,3) - мало событий
-    # # Приволжская (категории: 2,3)
-    # # Северная (категории: 3)
-    #
-    # generate_time_distribution_report(
-    #     csv_dir,
-    #     road="Северная",
-    #     category="3",
-    #     year="2023",
-    #     reports_dir=reports_dir
+    # create_road_responsibility_top_json(
+    #     csv_path=Path("KASANT/original/union/all_events.csv"),
+    #     output_json_path=Path("KASANT/calculation/synthetic_for_road_json/road_responsibility_top.json"),
+    #     top_n=5,
     # )
 
-#=======================================================================================================================
+    #====== Создание JSON для железнодорожных простоев =======
+
+    create_railway_timeout_reference_json(
+        csv_path=Path("KASANT/original/union/all_events.csv"),
+        output_json_path=Path("KASANT/calculation/synthetic_for_timeout_json/railway_timeout_reference.json"),
+    )
+
+    create_railway_timeout_reference_by_field_json(
+        csv_path=Path("KASANT/original/union/all_events.csv"),
+        output_json_dir=Path("KASANT/calculation/synthetic_for_timeout_json/railway_timeout"),
+    )
+
+#===========Расчет λ₀ и тест KS для департаментов и дорог=================================================================
 
     # csv_dir = Path("KASANT/csv")
     # out_dir = Path("KASANT/calculation/lambda_0")

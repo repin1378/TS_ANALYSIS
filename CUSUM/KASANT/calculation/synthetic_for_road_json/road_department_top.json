@@ -1,0 +1,269 @@
+{
+  "Восточно-Сибирская": [
+    {
+      "department": "CSH",
+      "count": 1862,
+      "share": 0.6943
+    },
+    {
+      "department": "CV",
+      "count": 728,
+      "share": 0.2714
+    },
+    {
+      "department": "CT",
+      "count": 92,
+      "share": 0.0343
+    }
+  ],
+  "Горьковская": [
+    {
+      "department": "CSH",
+      "count": 1369,
+      "share": 0.9828
+    },
+    {
+      "department": "CV",
+      "count": 14,
+      "share": 0.0101
+    },
+    {
+      "department": "CT",
+      "count": 10,
+      "share": 0.0072
+    }
+  ],
+  "Дальневосточная": [
+    {
+      "department": "CSH",
+      "count": 1521,
+      "share": 0.8672
+    },
+    {
+      "department": "CV",
+      "count": 221,
+      "share": 0.126
+    },
+    {
+      "department": "CT",
+      "count": 12,
+      "share": 0.0068
+    }
+  ],
+  "Забайкальская": [
+    {
+      "department": "CSH",
+      "count": 903,
+      "share": 0.6236
+    },
+    {
+      "department": "CV",
+      "count": 505,
+      "share": 0.3488
+    },
+    {
+      "department": "CT",
+      "count": 40,
+      "share": 0.0276
+    }
+  ],
+  "Западно-Сибирская": [
+    {
+      "department": "CSH",
+      "count": 1599,
+      "share": 0.7403
+    },
+    {
+      "department": "CV",
+      "count": 386,
+      "share": 0.1787
+    },
+    {
+      "department": "CT",
+      "count": 175,
+      "share": 0.081
+    }
+  ],
+  "Калининградская": [
+    {
+      "department": "CSH",
+      "count": 81,
+      "share": 0.9759
+    },
+    {
+      "department": "CT",
+      "count": 2,
+      "share": 0.0241
+    }
+  ],
+  "Красноярская": [
+    {
+      "department": "CSH",
+      "count": 997,
+      "share": 0.7336
+    },
+    {
+      "department": "CV",
+      "count": 298,
+      "share": 0.2193
+    },
+    {
+      "department": "CT",
+      "count": 64,
+      "share": 0.0471
+    }
+  ],
+  "Куйбышевская": [
+    {
+      "department": "CSH",
+      "count": 142,
+      "share": 0.6228
+    },
+    {
+      "department": "CV",
+      "count": 71,
+      "share": 0.3114
+    },
+    {
+      "department": "CT",
+      "count": 15,
+      "share": 0.0658
+    }
+  ],
+  "Московская": [
+    {
+      "department": "CSH",
+      "count": 1427,
+      "share": 0.8565
+    },
+    {
+      "department": "CT",
+      "count": 207,
+      "share": 0.1242
+    },
+    {
+      "department": "CV",
+      "count": 32,
+      "share": 0.0192
+    }
+  ],
+  "Октябрьская": [
+    {
+      "department": "CSH",
+      "count": 2674,
+      "share": 0.7839
+    },
+    {
+      "department": "CT",
+      "count": 561,
+      "share": 0.1645
+    },
+    {
+      "department": "CV",
+      "count": 176,
+      "share": 0.0516
+    }
+  ],
+  "Приволжская": [
+    {
+      "department": "CSH",
+      "count": 824,
+      "share": 0.994
+    },
+    {
+      "department": "CV",
+      "count": 4,
+      "share": 0.0048
+    },
+    {
+      "department": "CT",
+      "count": 1,
+      "share": 0.0012
+    }
+  ],
+  "Свердловская": [
+    {
+      "department": "CSH",
+      "count": 1323,
+      "share": 0.8172
+    },
+    {
+      "department": "CV",
+      "count": 204,
+      "share": 0.126
+    },
+    {
+      "department": "CT",
+      "count": 92,
+      "share": 0.0568
+    }
+  ],
+  "Северная": [
+    {
+      "department": "CSH",
+      "count": 682,
+      "share": 0.8399
+    },
+    {
+      "department": "CV",
+      "count": 120,
+      "share": 0.1478
+    },
+    {
+      "department": "CT",
+      "count": 10,
+      "share": 0.0123
+    }
+  ],
+  "Северо-Кавказская": [
+    {
+      "department": "CSH",
+      "count": 1316,
+      "share": 0.9578
+    },
+    {
+      "department": "CT",
+      "count": 45,
+      "share": 0.0328
+    },
+    {
+      "department": "CV",
+      "count": 13,
+      "share": 0.0095
+    }
+  ],
+  "Юго-Восточная": [
+    {
+      "department": "CSH",
+      "count": 268,
+      "share": 0.8535
+    },
+    {
+      "department": "CV",
+      "count": 27,
+      "share": 0.086
+    },
+    {
+      "department": "CT",
+      "count": 19,
+      "share": 0.0605
+    }
+  ],
+  "Южно-Уральская": [
+    {
+      "department": "CSH",
+      "count": 468,
+      "share": 0.6142
+    },
+    {
+      "department": "CV",
+      "count": 266,
+      "share": 0.3491
+    },
+    {
+      "department": "CT",
+      "count": 28,
+      "share": 0.0367
+    }
+  ]
+}

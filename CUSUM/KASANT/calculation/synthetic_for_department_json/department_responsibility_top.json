@@ -1,0 +1,233 @@
+{
+  "CSH": [
+    {
+      "responsibility": "В-СИБ, ШЧ-14 ТАКСИМО",
+      "count": 398,
+      "share": 0.0228
+    },
+    {
+      "responsibility": "ОКТ, ИЧ-2 Ш",
+      "count": 315,
+      "share": 0.018
+    },
+    {
+      "responsibility": "С-КАВ, ШЧ-18",
+      "count": 296,
+      "share": 0.017
+    },
+    {
+      "responsibility": "ГОРЬК, ШЧ-6 (Р)",
+      "count": 265,
+      "share": 0.0152
+    },
+    {
+      "responsibility": "З-СИБ, ШЧ-7 (Р)",
+      "count": 258,
+      "share": 0.0148
+    },
+    {
+      "responsibility": "Д-ВОСТ, ШЧ-14 (Э)",
+      "count": 239,
+      "share": 0.0137
+    },
+    {
+      "responsibility": "ОКТ, ШЧ-19",
+      "count": 232,
+      "share": 0.0133
+    },
+    {
+      "responsibility": "ОКТ, ШЧ-12",
+      "count": 221,
+      "share": 0.0127
+    },
+    {
+      "responsibility": "ОКТ, ШЧ-11",
+      "count": 215,
+      "share": 0.0123
+    },
+    {
+      "responsibility": "В-СИБ, ШЧ-13 СЕВЕРОБАЙКАЛЬСК",
+      "count": 214,
+      "share": 0.0123
+    },
+    {
+      "responsibility": "Д-ВОСТ, ШЧ-14 ДВОСТ",
+      "count": 202,
+      "share": 0.0116
+    },
+    {
+      "responsibility": "В-СИБ, ШЧ-11 КОРШУНИХА-АНГАРСКАЯ",
+      "count": 201,
+      "share": 0.0115
+    },
+    {
+      "responsibility": "ЗАБ, ШЧ-9",
+      "count": 192,
+      "share": 0.011
+    },
+    {
+      "responsibility": "ГОРЬК, ШЧ-3",
+      "count": 188,
+      "share": 0.0108
+    },
+    {
+      "responsibility": "В-СИБ, ШЧ-2 НИЖНЕУДИНСК",
+      "count": 187,
+      "share": 0.0107
+    }
+  ],
+  "CT": [
+    {
+      "responsibility": "ОКТ, ТЧЭ-14",
+      "count": 137,
+      "share": 0.0998
+    },
+    {
+      "responsibility": "ОКТ, ТЧЭ-12",
+      "count": 116,
+      "share": 0.0845
+    },
+    {
+      "responsibility": "МОСК, ТЧЭ-36",
+      "count": 99,
+      "share": 0.0721
+    },
+    {
+      "responsibility": "ОКТ, ТЧЭ-21",
+      "count": 62,
+      "share": 0.0452
+    },
+    {
+      "responsibility": "ОКТ, ТЧЭ-4",
+      "count": 52,
+      "share": 0.0379
+    },
+    {
+      "responsibility": "ОКТ, ТЧЭ-1",
+      "count": 49,
+      "share": 0.0357
+    },
+    {
+      "responsibility": "МОСК, ТЧЭ-5",
+      "count": 44,
+      "share": 0.032
+    },
+    {
+      "responsibility": "З-СИБ, ТЧЭ-10",
+      "count": 41,
+      "share": 0.0299
+    },
+    {
+      "responsibility": "ОКТ, ТЧЭ-26",
+      "count": 35,
+      "share": 0.0255
+    },
+    {
+      "responsibility": "З-СИБ, ТЧЭ-14",
+      "count": 31,
+      "share": 0.0226
+    },
+    {
+      "responsibility": "З-СИБ, ТЧЭ-2",
+      "count": 26,
+      "share": 0.0189
+    },
+    {
+      "responsibility": "ОКТ, ТЧЭ-11",
+      "count": 25,
+      "share": 0.0182
+    },
+    {
+      "responsibility": "СВЕРД, ТЧЭ-17",
+      "count": 24,
+      "share": 0.0175
+    },
+    {
+      "responsibility": "ОКТ, ТЧЭ-30",
+      "count": 23,
+      "share": 0.0168
+    },
+    {
+      "responsibility": "СВЕРД, ТЧЭ-9",
+      "count": 23,
+      "share": 0.0168
+    }
+  ],
+  "CV": [
+    {
+      "responsibility": "КРАС, ВЧДЭ-7 КРАСНОЯРСК-ВОСТ",
+      "count": 443,
+      "share": 0.1445
+    },
+    {
+      "responsibility": "ЗАБ, ВЧДЭ-3 КАРЫМСКАЯ",
+      "count": 264,
+      "share": 0.0861
+    },
+    {
+      "responsibility": "Д-ВОСТ, ВЧДЭ-1 ХАБАРОВСК",
+      "count": 208,
+      "share": 0.0679
+    },
+    {
+      "responsibility": "СВЕРД, ВЧДЭ-4",
+      "count": 198,
+      "share": 0.0646
+    },
+    {
+      "responsibility": "ЗАБ, ВЧДЭ-7 БЕЛОГОРСК",
+      "count": 173,
+      "share": 0.0564
+    },
+    {
+      "responsibility": "В-СИБ, ВЧДЭ-10 УЛАН-УДЭ",
+      "count": 152,
+      "share": 0.0496
+    },
+    {
+      "responsibility": "КРАС, ВЧДЭ-8 АБАКАН",
+      "count": 150,
+      "share": 0.0489
+    },
+    {
+      "responsibility": "В-СИБ, ВЧДЭ-13 ТАЙШЕТ",
+      "count": 137,
+      "share": 0.0447
+    },
+    {
+      "responsibility": "З-СИБ, ВЧДЭ-25 НОВОКУЗНЕЦК",
+      "count": 137,
+      "share": 0.0447
+    },
+    {
+      "responsibility": "З-СИБ, ВЧДЭ-6 ИНСКАЯ",
+      "count": 108,
+      "share": 0.0352
+    },
+    {
+      "responsibility": "КРАС, ВЧДЭ-1 БОГОТОЛ",
+      "count": 101,
+      "share": 0.033
+    },
+    {
+      "responsibility": "Ю-УР, ВЧДЭ-1 ЧЕЛЯБИНСК",
+      "count": 91,
+      "share": 0.0297
+    },
+    {
+      "responsibility": "З-СИБ, ВЧДЭ-23 БЕЛОВО",
+      "count": 68,
+      "share": 0.0222
+    },
+    {
+      "responsibility": "ОКТ, ВЧДЭ-28 ВОЛХОВСТРОЙ",
+      "count": 51,
+      "share": 0.0166
+    },
+    {
+      "responsibility": "З-СИБ, ВЧДЭ-12 ВХОДНАЯ",
+      "count": 49,
+      "share": 0.016
+    }
+  ]
+}

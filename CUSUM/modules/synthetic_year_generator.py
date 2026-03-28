@@ -290,3 +290,5 @@ def generate_spike_report(
 
     print(f"📄 Мини-отчёт по всплескам сохранён: {out_path}")
     return df_report
+
+
