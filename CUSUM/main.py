@@ -259,31 +259,31 @@ def main():
     #     ],
     # )
 
-    #==== Обогащение синтетических данных о дорогах для 2025 года на основе топов из реальных данных и правил заполнения полей простоев ======
-
-    enrich_synthetic_road_csvs(
-        input_dir=Path("KASANT/calculation/synthetic_spike/by_road_year"),
-        output_dir=Path("KASANT/calculation/synthetic_spike_enriched/by_road_year"),
-        road_department_top_json=Path("KASANT/calculation/synthetic_for_road_json/road_department_top.json"),
-        road_reason_top_json=Path("KASANT/calculation/synthetic_for_road_json/road_reason_top.json"),
-        road_responsibility_top_json=Path("KASANT/calculation/synthetic_for_road_json/road_responsibility_top.json"),
-        categories_json=Path("KASANT/filters/categories.json"),
-        railway_timeout_reference_json=Path("KASANT/calculation/synthetic_for_timeout_json/railway_timeout_reference.json"),
-        random_seed=42,
-    )
-
-    #==== Обогащение синтетических данных о дирекциях для 2025 года на основе топов из реальных данных и правил заполнения полей простоев ======
-
-    enrich_synthetic_department_csvs(
-        input_dir=Path("KASANT/calculation/synthetic_spike/by_department_year"),
-        output_dir=Path("KASANT/calculation/synthetic_spike_enriched/by_department_year"),
-        department_road_top_json=Path("KASANT/calculation/synthetic_for_department_json/deppartment_road_top.json"),
-        department_reason_top_json=Path("KASANT/calculation/synthetic_for_department_json/department_reason_top.json"),
-        department_responsibility_top_json=Path("KASANT/calculation/synthetic_for_department_json/department_responsibility_top.json"),
-        categories_json=Path("KASANT/filters/categories.json"),
-        railway_timeout_reference_json=Path("KASANT/calculation/synthetic_for_timeout_json/railway_timeout_reference.json"),
-        random_seed=42,
-    )
+    # #==== Обогащение синтетических данных о дорогах для 2025 года на основе топов из реальных данных и правил заполнения полей простоев ======
+    #
+    # enrich_synthetic_road_csvs(
+    #     input_dir=Path("KASANT/calculation/synthetic_spike/by_road_year"),
+    #     output_dir=Path("KASANT/calculation/synthetic_spike_enriched/by_road_year"),
+    #     road_department_top_json=Path("KASANT/calculation/synthetic_for_road_json/road_department_top.json"),
+    #     road_reason_top_json=Path("KASANT/calculation/synthetic_for_road_json/road_reason_top.json"),
+    #     road_responsibility_top_json=Path("KASANT/calculation/synthetic_for_road_json/road_responsibility_top.json"),
+    #     categories_json=Path("KASANT/filters/categories.json"),
+    #     railway_timeout_reference_json=Path("KASANT/calculation/synthetic_for_timeout_json/railway_timeout_reference.json"),
+    #     random_seed=42,
+    # )
+    #
+    # #==== Обогащение синтетических данных о дирекциях для 2025 года на основе топов из реальных данных и правил заполнения полей простоев ======
+    #
+    # enrich_synthetic_department_csvs(
+    #     input_dir=Path("KASANT/calculation/synthetic_spike/by_department_year"),
+    #     output_dir=Path("KASANT/calculation/synthetic_spike_enriched/by_department_year"),
+    #     department_road_top_json=Path("KASANT/calculation/synthetic_for_department_json/deppartment_road_top.json"),
+    #     department_reason_top_json=Path("KASANT/calculation/synthetic_for_department_json/department_reason_top.json"),
+    #     department_responsibility_top_json=Path("KASANT/calculation/synthetic_for_department_json/department_responsibility_top.json"),
+    #     categories_json=Path("KASANT/filters/categories.json"),
+    #     railway_timeout_reference_json=Path("KASANT/calculation/synthetic_for_timeout_json/railway_timeout_reference.json"),
+    #     random_seed=42,
+    # )
 
 #===========Расчет λ₀ и тест KS для департаментов и дорог=================================================================
 
@@ -488,15 +488,15 @@ def main():
 
     # ===== Пути для сохранения результатов =====
     csv_path = Path(
-        "KASANT/cusum_optimization/static/h_from_delta_arl0.csv"
+        "KASANT/cusum_optimization/static_new/h_from_delta_arl0.csv"
     )
     json_path = Path(
-        "KASANT/cusum_optimization/dynamic/h_from_delta_arl0.json"
+        "KASANT/cusum_optimization/dynamic_new/h_from_delta_arl0.json"
     )
 
     # ===== Параметры эксперимента =====
-    deltas = [1.5, 2.0, 2.5, 3.0]
-    arl0_targets = [100, 150, 200, 250]
+    deltas = [1.25, 1.5, 2.0, 2.5, 3.0]
+    arl0_targets = [100, 250, 500, 1000]
 
     # Количество прогонов Монте-Карло
     n_runs_mc = 3000
@@ -506,55 +506,41 @@ def main():
     h_grid = None
 
     # ===== Запуск экспериментов =====
-    # for delta in deltas:
-    #
-    #     print("\n" + "=" * 80)
-    #     print(f"DELTA = {delta}")
-    #     print("=" * 80)
-    #
-    #     for arl0 in arl0_targets:
-    #         print(f"\n--- ARL0_target = {arl0} ---")
+    for delta in deltas:
 
-            # -------------------------------------------------
-            # 1) Аналитический режим (повторение статьи)
-            # -------------------------------------------------
-            # run_arl0_delta_experiment(
-            #     arl0_target=arl0,
-            #     delta_target=delta,
-            #     n_runs_mc=n_runs_mc,
-            #     csv_path=csv_path,
-            #     json_path=json_path,
-            #     mode="analytic",
-            #     max_steps=100_000,
-            #     n_workers=6,
-            # )
+        print("\n" + "=" * 80)
+        print(f"DELTA = {delta}")
+        print("=" * 80)
+
+        for arl0 in arl0_targets:
+            print(f"\n--- ARL0_target = {arl0} ---")
 
             # -------------------------------------------------
             # 2) Практический режим (MC + ограничения)
             # -------------------------------------------------
-            # run_arl0_delta_experiment(
-            #     arl0_target=arl0,
-            #     delta_target=delta,
-            #     n_runs_mc=n_runs_mc,
-            #     csv_path=csv_path,  # в этом режиме CSV не используется
-            #     json_path=json_path,
-            #     mode="mc_optimal_E",
-            #     h_grid=h_grid,  # None → автоподбор
-            #     arl0_tolerance=0.10,  # ±10% по ARL0
-            #     arl1_min_factor=3.0,  # ARL1 ≥ ARL0 / 3
-            #     arl1_min_abs=5.0,  # минимум ARL1
-            #     arl1_max_factor=1.2,  # ARL1 ≤ 1.2 × ARL0
-            #     max_steps=100_000,
-            #     n_workers=6,
-            # )
+            run_arl0_delta_experiment(
+                arl0_target=arl0,
+                delta_target=delta,
+                n_runs_mc=n_runs_mc,
+                csv_path=csv_path,  # в этом режиме CSV не используется
+                json_path=json_path,
+                mode="mc_optimal_E",
+                h_grid=h_grid,  # None → автоподбор
+                arl0_tolerance=0.10,  # ±10% по ARL0
+                arl1_min_factor=3.0,  # ARL1 ≥ ARL0 / 3
+                arl1_min_abs=5.0,  # минимум ARL1
+                arl1_max_factor=0.3,  # ARL1 ≤ 1.2 × ARL0
+                max_steps=100_000,
+                n_workers=12,
+            )
 
     # json_path = Path("KASANT/cusum_optimization/dynamic/h_from_delta_arl1.json")
     #
     #
     # # Значения, которые ты указал:
-    # deltas = [1.5, 2.0, 2.5, 3.0]
-    # arl1_targets = [10, 20, 30, 40]
-    # arl0_targets = [100, 150, 200, 250]
+    # deltas = [1.25, 1.5, 2.0, 2.5, 3.0]
+    # arl1_targets = [10, 30, 60, 80]
+    # # arl0_targets = [100, 150, 200, 250]
     #
     # # Количество прогонов Монте-Карло
     # n_runs_mc = 3000

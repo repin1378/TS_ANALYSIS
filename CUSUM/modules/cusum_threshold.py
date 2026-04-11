@@ -749,20 +749,20 @@ def estimate_metrics_mc_parallel(
 ):
     """
     Параллельная версия Monte-Carlo оценки ARL0, ARL1.
+    H0 и H1 прогоны объединены в один Pool — накладные расходы вдвое меньше.
     """
 
     if n_workers is None:
         n_workers = cpu_count()
 
-    # ======= H0 =======
     args0 = [(delta, h, "H0", max_steps, None) for _ in range(n_runs_arl0)]
-    with Pool(n_workers) as p:
-        t0 = p.map(_mc_single_arg, args0)
-
-    # ======= H1 =======
     args1 = [(delta, h, "H1", max_steps, None) for _ in range(n_runs_arl1)]
+
     with Pool(n_workers) as p:
-        t1 = p.map(_mc_single_arg, args1)
+        results = p.map(_mc_single_arg, args0 + args1)
+
+    t0 = results[:n_runs_arl0]
+    t1 = results[n_runs_arl0:]
 
     arl0 = float(np.mean(t0))
     arl1 = float(np.mean(t1))
