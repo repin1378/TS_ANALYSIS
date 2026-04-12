@@ -1,11 +1,11 @@
 from pathlib import Path
 import pandas as pd
 from modules.converter import convert_excels, convert_xlsx_to_csv_keep_all_fields, compare_csv_structures, merge_csv_files, remove_nbsp_from_csv
-from modules.cusum_exp_seasonal import run_cusum_exp_from_csv
+from modules.cusum_exp_seasonal import run_cusum_exp_from_csv, run_cusum_batch
 from modules.filter_manager import create_filters, load_filtered_dataframe
 from modules.report_counter import generate_count_reports, generate_time_distribution_report
 from modules.data_loader import get_df_full_filter, get_df_multi_year
-from modules.preprocess import preprocess_dataframe, save_histogram, plot_cumulative_events, plot_cumulative_events_with_spike, plot_cumulative_events_with_cusum_alarms, estimate_ar1_for_directories
+from modules.preprocess import preprocess_dataframe, save_histogram, plot_cumulative_events, plot_cumulative_events_with_spike, plot_cumulative_events_with_cusum_alarms, plot_cusum_batch, estimate_ar1_for_directories
 from modules.seasonal_lambda import estimate_lambda_for_season
 from modules.synthetic_year_generator import generate_synthetic_year, generate_synthetic_year_with_spikes_smooth, generate_spike_report
 from modules.synthetic_enricher import enrich_synthetic_department_csvs, enrich_synthetic_road_csvs
@@ -13,6 +13,7 @@ from modules.cusum_threshold import design_cusum_threshold_analytic, estimate_me
 from modules.synthetic_for_department import create_department_reason_top_json, create_department_road_top_json, create_department_responsibility_top_json
 from modules.synthetic_for_road import create_road_reason_top_json, create_road_department_top_json, create_road_responsibility_top_json
 from modules.synthetic_railway_timeout import create_railway_timeout_reference_json, create_railway_timeout_reference_by_field_json
+from modules.compare import compare_road_by_year, compare_department_by_year
 import numpy as np
 
 def main():
@@ -285,310 +286,126 @@ def main():
     #     random_seed=42,
     # )
 
-#===========Расчет λ₀ и тест KS для департаментов и дорог=================================================================
+    # # ==== Поиск оптимальных параметров для CUSUM ======
 
-    # csv_dir = Path("KASANT/csv")
-    # out_dir = Path("KASANT/calculation/lambda_0")
-    # out_dir.mkdir(exist_ok=True)
-    #
-    # seasons = ["Весна", "Лето", "Осень", "Зима"]
-    #
-    # tasks = [
-    #     ("Октябрьская", [2, 3], 2024),
-    #     ("Восточно-Сибирская", [2, 3], 2024),
-    #     ("Приволжская", [2, 3], 2024),
-    #     ("Северная", [3], 2024),
-    # ]
-    #
-    # for road, categories, year in tasks:
-    #
-    #     rows = []  # ← сюда будем собирать строки для CSV
-    #
-    #     print("\n" + "=" * 80)
-    #     print(f"Дорога: {road}, год: {year}")
-    #
-    #     for category in categories:
-    #         print(f"\n  Категория {category}")
-    #
-    #         for season in seasons:
-    #             print(f"    → сезон: {season}")
-    #
-    #             try:
-    #                 result = estimate_lambda_for_season(
-    #                     csv_dir=csv_dir,
-    #                     road=road,
-    #                     category=str(category),
-    #                     season=season,
-    #                     target_year=year,
-    #                     min_points=30
-    #                 )
-    #
-    #                 print(
-    #                     f"      λ_MLE={result['lambda_mle']:.5f}, "
-    #                     f"λ_fitter={result['lambda_fitter']:.5f}, "
-    #                     f"n={result['n']}, "
-    #                     f"KS_p={result['ks_pvalue']:.3f}, "
-    #                     f"KS_OK={result['ks_ok']}"
-    #                 )
-    #
-    #                 # Добавляем строку в будущий CSV
-    #                 rows.append({
-    #                     "ROAD": road,
-    #                     "CATEGORY": category,
-    #                     "SEASON": season,
-    #                     "YEAR": year,
-    #                     "N": result["n"],
-    #                     "LAMBDA_MLE": result["lambda_mle"],
-    #                     "LAMBDA_FITTER": result["lambda_fitter"],
-    #                     "LAMBDA_MONTH": result["lambda_month"],
-    #                     "KS_PVALUE": result["ks_pvalue"],
-    #                     "KS_OK": result["ks_ok"],
-    #                 })
-    #
-    #             except Exception as e:
-    #                 print(f"      ⚠ Нет данных ({e})")
-    #
-    #     # Сохраняем результаты для дороги
-    #     if rows:
-    #         df_out = pd.DataFrame(rows)
-    #         filename = f"lambda_0_{road}.csv"
-    #         df_out.to_csv(out_dir / filename, index=False, encoding="utf-8-sig")
-    #         print(f"\n📁 Файл сохранён: {out_dir / filename}")
-    #     else:
-    #         print(f"\n⚠ Нет данных для {road}, CSV не создан.")
-
-#=======================================================================================================================
-
-    # lambda_dir = Path("KASANT/calculation/lambda_0")
-    # synthetic_dir = Path("KASANT/calculation/synthetic")
-    # graphs_dir = Path("KASANT/calculation/graphs")
-    #
-    # # === Генерируем синтетику для 2025 года ===
-    # tasks = [
-    #     ("Октябрьская",       [2, 3], 2025),
-    #     ("Восточно-Сибирская", [2, 3], 2025),
-    #     ("Приволжская",       [2, 3], 2025),
-    #     ("Северная",          [3],    2025),
-    # ]
-    #
-    # for road, categories, year in tasks:
-    #
-    #     print("\n" + "=" * 90)
-    #     print(f"ГЕНЕРАЦИЯ СИНТЕТИКИ — дорога: {road}, год: {year}")
-    #
-    #     for category in categories:
-    #
-    #         print(f"\n  Категория: {category}")
-    #
-    #         # 1. Генерируем синтетический год
-    #         df_syn = generate_synthetic_year(
-    #             lambda_dir=lambda_dir,
-    #             road=road,
-    #             category=str(category),
-    #             year=year,
-    #             out_dir=synthetic_dir
-    #         )
-    #
-    #         file_path = synthetic_dir / f"synthetic_{road}_{category}_{year}.csv"
-    #         print(f"    → Файл синтетики: {file_path}")
-    #
-    #         # 2. Читаем синтетический CSV
-    #         df = pd.read_csv(file_path, parse_dates=["START_TIME"])
-    #
-    #         # 3. Строим гистограмму TIME_DIFF
-    #         print(f"    → Построение гистограммы…")
-    #         save_histogram(df, graphs_dir, file_path.stem)
-    #
-    #         # 4. График накопленного числа событий
-    #         print(f"    → Построение графика НЧС…")
-    #         plot_cumulative_events(df, graphs_dir, file_path.stem)
-    #
-    #         print(f"    ✔ Готово для {road}, категория {category}, год {year}")
-
-#=======================================================================================================================
-
-    # lambda_dir = Path("KASANT/calculation/lambda_0")
-    # synthetic_dir = Path("KASANT/calculation/synthetic_spike")
-    # graphs_dir = Path("KASANT/calculation/graphs_spike")
-    #
-    # tasks = [
-    #     ("Октябрьская",        [2, 3], 2025),
-    #     ("Восточно-Сибирская", [2, 3], 2025),
-    #     ("Приволжская",        [2, 3], 2025),
-    #     ("Северная",           [3],    2025),
-    # ]
-    #
-    # # ==== параметры всплеска ====
-    # delta = 3               # λ1 = δ·λ0 → удвоение интенсивности
-    # spike_days = 30         # длительность всплеска
-    # transition_days = 10     # длительность экспоненциального перехода
-    # k = 2                   # крутизна экспоненты
-    #
-    # for road, categories, year in tasks:
-    #
-    #     print("\n" + "=" * 90)
-    #     print(f"ГЕНЕРАЦИЯ СИНТЕТИКИ СО ВСПЛЕСКАМИ — дорога: {road}, год: {year}")
-    #
-    #     for category in categories:
-    #
-    #         print(f"\n  Категория: {category}")
-    #
-    #         # === 1. Генерируем синтетический год со всплесками ===
-    #         df_syn = generate_synthetic_year_with_spikes_smooth(
-    #             lambda_dir=lambda_dir,
-    #             road=road,
-    #             category=str(category),
-    #             year=year,
-    #             out_dir=synthetic_dir,
-    #             delta=delta,
-    #             spike_days=spike_days,
-    #             transition_days=transition_days,
-    #             k=k
-    #         )
-    #
-    #         file_path = synthetic_dir / f"synthetic_smooth_{road}_{category}_{year}.csv"
-    #         print(f"    → Файл синтетики: {file_path}")
-    #
-    #         # === 2. Читаем синтетический CSV ===
-    #         df = pd.read_csv(file_path, parse_dates=["START_TIME"])
-    #
-    #         # === 3. Гистограмма интервалов TIME_DIFF ===
-    #         print(f"    → Построение гистограммы…")
-    #         save_histogram(df, graphs_dir, file_path.stem)
-    #
-    #         # === 4. График накопленного числа событий ===
-    #         print(f"    → Построение графика НЧС…")
-    #         plot_cumulative_events(df, graphs_dir, file_path.stem)
-    #
-    #         print(f"    ✔ Готово для {road}, категория {category}, год {year}")
-    #
-    #         print(f"    → Построение графика НЧС + λ(t)…")
-    #         # 5. НЧС + λ(t)
-    #         plot_cumulative_events_with_lambda(df, graphs_dir, file_path.stem)
-    #
-    #         print(f"    ✔ Готово для {road}, категория {category}, год {year}")
-    #
-    #         # сохраняем мини-отчёт
-    #         report_dir = Path("KASANT/calculation/reports/synthetic_spike_reports")
-    #         generate_spike_report(df_syn, report_dir, road, category, year)
-
-#=======================================================================================================================
-
-    # rows = compare_analytic_vs_mc_extended(
-    #     deltas=[1.25, 1.5, 2.0, 2.5, 3.0],
-    #     arl0_targets=[100, 250, 500, 1000],
-    #     n_runs_arl0=500,
-    #     n_runs_arl1=500
+    # # Вычисление h для заданных ARL1 и delta
+    # # ===== Пути для сохранения результатов =====
+    # csv_path = Path(
+    #     "KASANT/cusum_optimization/static_new/h_from_delta_arl0.csv"
+    # )
+    # json_path = Path(
+    #     "KASANT/cusum_optimization/dynamic_new/h_from_delta_arl0.json"
     # )
     #
-    # save_comparison_to_csv(rows, Path("KASANT/cusum_optimization/cusum_threshold_report_500.csv"))
-    # save_comparison_to_excel(rows, Path("KASANT/cusum_optimization/cusum_threshold_report_500.xlsx"))
-
-#=======================================================================================================================
-
-    # ===== Пути для сохранения результатов =====
-    csv_path = Path(
-        "KASANT/cusum_optimization/static_new/h_from_delta_arl0.csv"
-    )
-    json_path = Path(
-        "KASANT/cusum_optimization/dynamic_new/h_from_delta_arl0.json"
-    )
-
-    # ===== Параметры эксперимента =====
-    deltas = [1.25, 1.5, 2.0, 2.5, 3.0]
-    arl0_targets = [100, 250, 500, 1000]
-
-    # Количество прогонов Монте-Карло
-    n_runs_mc = 3000
-
-    # Если хочешь задать вручную — можно,
-    # но теперь автоподбор h_grid работает корректно
-    h_grid = None
-
-    # ===== Запуск экспериментов =====
-    for delta in deltas:
-
-        print("\n" + "=" * 80)
-        print(f"DELTA = {delta}")
-        print("=" * 80)
-
-        for arl0 in arl0_targets:
-            print(f"\n--- ARL0_target = {arl0} ---")
-
-            # -------------------------------------------------
-            # 2) Практический режим (MC + ограничения)
-            # -------------------------------------------------
-            run_arl0_delta_experiment(
-                arl0_target=arl0,
-                delta_target=delta,
-                n_runs_mc=n_runs_mc,
-                csv_path=csv_path,  # в этом режиме CSV не используется
-                json_path=json_path,
-                mode="mc_optimal_E",
-                h_grid=h_grid,  # None → автоподбор
-                arl0_tolerance=0.10,  # ±10% по ARL0
-                arl1_min_factor=3.0,  # ARL1 ≥ ARL0 / 3
-                arl1_min_abs=5.0,  # минимум ARL1
-                arl1_max_factor=0.3,  # ARL1 ≤ 1.2 × ARL0
-                max_steps=100_000,
-                n_workers=12,
-            )
-
-    # json_path = Path("KASANT/cusum_optimization/dynamic/h_from_delta_arl1.json")
-    #
-    #
-    # # Значения, которые ты указал:
+    # # ===== Параметры эксперимента =====
     # deltas = [1.25, 1.5, 2.0, 2.5, 3.0]
-    # arl1_targets = [10, 30, 60, 80]
-    # # arl0_targets = [100, 150, 200, 250]
+    # arl0_targets = [100, 250, 500, 1000]
     #
     # # Количество прогонов Монте-Карло
     # n_runs_mc = 3000
     #
-    # # Если нужен явный диапазон — можно задать, но теперь это необязательно:
-    # # h_grid = np.arange(0.5, 8.5, 0.1)
+    # # Если хочешь задать вручную — можно,
+    # # но теперь автоподбор h_grid работает корректно
+    # h_grid = None
+    #
+    # # ===== Запуск экспериментов =====
+    # for delta in deltas:
+    #
+    #     print("\n" + "=" * 80)
+    #     print(f"DELTA = {delta}")
+    #     print("=" * 80)
+    #
+    #     for arl0 in arl0_targets:
+    #         print(f"\n--- ARL0_target = {arl0} ---")
+    #
+    #         # -------------------------------------------------
+    #         # 2) Практический режим (MC + ограничения)
+    #         # -------------------------------------------------
+    #         run_arl0_delta_experiment(
+    #             arl0_target=arl0,
+    #             delta_target=delta,
+    #             n_runs_mc=n_runs_mc,
+    #             csv_path=csv_path,  # в этом режиме CSV не используется
+    #             json_path=json_path,
+    #             mode="mc_optimal_E",
+    #             h_grid=h_grid,  # None → автоподбор
+    #             arl0_tolerance=0.10,  # ±10% по ARL0
+    #             arl1_min_factor=3.0,  # ARL1 ≥ ARL0 / 3
+    #             arl1_min_abs=5.0,  # минимум ARL1
+    #             arl1_max_factor=0.3,  # ARL1 ≤ 1.2 × ARL0
+    #             max_steps=100_000,
+    #             n_workers=12,
+    #         )
+
+    # # Вычисление h для заданных ARL1 и delta (стандартный режим)
+    # # ===== Пути для сохранения результатов =====
+    # json_path = Path("KASANT/cusum_optimization/dynamic_new/h_from_delta_arl1.json")
+    #
+    # deltas = [1.25, 1.5, 2.0, 2.5, 3.0]
+    # arl1_targets = [5, 10, 20, 30]
+    # n_runs_mc = 3000
     #
     # for delta in deltas:
     #     print(f"\n============ Δ = {delta} ============")
-    #
     #     for arl1 in arl1_targets:
-    #
     #         print(f"\n--- ARL1_target = {arl1} ---")
-    #
-    #         # Запуск улучшенной оптимизации
     #         run_arl1_target_delta_experiment(
     #             arl1_target=arl1,
     #             delta_target=delta,
     #             n_runs_mc=n_runs_mc,
     #             json_path=json_path,
-    #             # h_grid=h_grid,           # авто-подбор h_grid
-    #             arl1_tolerance=0.10,   # ±20% окно для ARL1
-    #             arl0_max=200.0,        # ограничиваем слишком большие ARL0
-    #             arl0_min_factor=1.5,   # ARL0_min = ARL1_target * 1.5
-    #             max_steps=100000,
-    #             n_workers=6            # параллелизм
+    #             arl1_tolerance=0.15,
+    #             arl0_min_factor=1.5,
+    #             max_steps=50_000,
+    #             n_workers=12,
     #         )
 
-    # ===== Пути =====
+    # #==== Вычисление h для большого ARL1 (например CSH) ====
+    # json_path = Path("KASANT/cusum_optimization/dynamic_new/h_from_delta_arl1.json")
+    # deltas       = [2.5, 3.0]
+    # arl1_targets = [500, 750, 1000, 1500]   # ~10, ~15, ~20, ~30 дней для CSH
+    #
+    # for delta in deltas:
+    #     print(f"\n{'='*60}")
+    #     print(f"  LARGE ARL1 | δ = {delta}")
+    #     print(f"{'='*60}")
+    #
+    #     for arl1 in arl1_targets:
+    #         print(f"\n--- ARL1_target = {arl1} ---")
+    #
+    #         run_arl1_target_delta_experiment(
+    #             arl1_target   = arl1,
+    #             delta_target  = delta,
+    #             n_runs_mc     = 2000,       # прогонов для H1 (точность ARL1)
+    #             n_runs_arl0   = 200,        # прогонов для H0 (только для записи)
+    #             json_path     = json_path,
+    #             arl1_tolerance= 0.20,       # ±20% — шире, т.к. h сетка крупная
+    #             arl0_max      = None,       # ← снимаем ограничение сверху по ARL0
+    #             arl0_min_factor = None,     # ← снимаем ограничение снизу по ARL0
+    #             max_steps     = 200_000,    # для H0; H1 автоматически max(200_000, 20×ARL1)
+    #             n_workers     = 12,
+    #         )
+
+    # # Запуск оптимизации для заданных ARL0, ARL1 и delta
     # json_path = Path(
-    #     "KASANT/cusum_optimization/fast/h_from_delta_arl0_arl1_fast.json"
+    #     "KASANT/cusum_optimization/dynamic_new/h_from_delta_arl0_arl1.json"
     # )
     #
     # # ===== Параметры =====
     # deltas = [1.5, 2.0, 2.5, 3.0]
-    # arl0_targets = [100, 150, 200, 250]
-    # arl1_targets = [10, 20, 30, 40]
+    # arl0_targets = [100, 150, 200]
+    # arl1_targets = [5, 10, 15]
     #
     # # ===== Быстрые параметры MC =====
-    # n_runs_mc = 1000
-    # h_grid = np.arange(0.8, 6.6, 0.2)
+    # n_runs_mc = 3000
+    # # h_grid = np.arange(0.8, 6.6, 0.2)
     #
-    # arl0_tolerance = 0.25
-    # arl1_tolerance = 0.25
-    # arl0_max = 250          # можно заменить на 300
+    # arl0_tolerance = 0.15
+    # arl1_tolerance = 0.15
+    # # arl0_max = 250          # можно заменить на 300
     #
-    # max_steps = 80_000
-    # n_workers = 6
+    # max_steps = 50_000
+    # n_workers = 12
     #
     # # ===== Запуск =====
     # for delta in deltas:
@@ -606,30 +423,132 @@ def main():
     #                 arl1_target=arl1,
     #                 n_runs_mc=n_runs_mc,
     #                 json_path=json_path,
-    #                 h_grid=h_grid,
+    #                 # h_grid=h_grid,
     #                 arl0_tolerance=arl0_tolerance,
     #                 arl1_tolerance=arl1_tolerance,
-    #                 arl0_max=arl0_max,
+    #                 # arl0_max=arl0_max,
     #                 max_steps=max_steps,
     #                 n_workers=n_workers,
     #             )
 
+
+    # # ==== Запуск CUSUM (одиночный файл) ======
+
     # run_cusum_exp_from_csv(
     #     csv_path=Path("KASANT/calculation/synthetic_spike/synthetic_smooth_Октябрьская_3_2025.csv"),
-    #     delta_target=3.0,
-    #     arl0_target=200,
+    #     delta_target=1.5,
+    #     arl1_target=5.0,
     #     window_size=30,
-    #     cooldown_after_alarm=30,
-    #     h_json_dir=Path("KASANT/cusum_optimization/dynamic"),
+    #     cooldown_after_alarm=5,
+    #     h_json_dir=Path("KASANT/cusum_optimization/dynamic_new"),
     #     out_dir=Path("KASANT/cusum_results/"),
     # )
-    #
+
     # df_full = pd.read_csv("KASANT/cusum_results/synthetic_smooth_Октябрьская_3_2025_cusum_full.csv")
-    #
+
     # plot_cumulative_events_with_cusum_alarms(
     #     df=df_full,
     #     save_dir=Path("KASANT/cusum_results/graphs"),
     #     filename_stem="Октябрьская_3_2025"
+    # )
+
+    # # ==== Запуск CUSUM (батч: дороги + департаменты) ======
+    # run_cusum_batch(
+    #     # ── параметры CUSUM ───────────────────────────────────────────────
+    #     delta_target=3.0,           # δ = λ₁/λ₀  (целевое отклонение)
+    #     window_size=15,             # окно для оценки λ̂ (число событий)
+    #     arl1_target=5.0,           # целевая задержка обнаружения (шаги)
+    #     arl0_target=100.0,          # целевой ARL0 (ложные тревоги)
+    #     cooldown_after_alarm=30,    # шагов «молчания» после тревоги
+    #     # ── таблицы порогов h ─────────────────────────────────────────────
+    #     h_json_dir=Path("KASANT/cusum_optimization/dynamic_new"),
+    #     # ── входные папки с CSV ───────────────────────────────────────────
+    #     roads_csv_dir=Path("KASANT/calculation/synthetic_spike_enriched/by_road_year"),
+    #     departments_csv_dir=Path("KASANT/calculation/synthetic_spike_enriched/by_department_year"),
+    #     # ── папки для результатов ─────────────────────────────────────────
+    #     roads_out_dir=Path("KASANT/cusum_results/by_road_year"),
+    #     departments_out_dir=Path("KASANT/cusum_results/by_department_year"),
+    #     # ── сводный CSV ───────────────────────────────────────────────────
+    #     summary_out_dir=Path("KASANT/cusum_results"),
+    #     # ── вывод ─────────────────────────────────────────────────────────
+    #     verbose=True,
+    #     progress_every=0,           # 0 — не выводить прогресс внутри файлов
+    # )
+
+    # # ==== Запуск CUSUM (кастомизация под CSH) ======
+    # run_cusum_batch(
+    #     # ── параметры CUSUM ───────────────────────────────────────────────
+    #     delta_target=3.0,           # δ = λ₁/λ₀  (целевое отклонение)
+    #     window_size=15,             # окно для оценки λ̂ (число событий)
+    #     arl1_target=500.0,           # целевая задержка обнаружения (шаги)
+    #     # arl0_target=15.0,          # целевой ARL0 (ложные тревоги)
+    #     cooldown_after_alarm=30,    # шагов «молчания» после тревоги
+    #     # ── таблицы порогов h ─────────────────────────────────────────────
+    #     h_json_dir=Path("KASANT/cusum_optimization/dynamic_new"),
+    #     # ── входные папки с CSV ───────────────────────────────────────────
+    #     #roads_csv_dir=Path("KASANT/calculation/synthetic_spike_enriched/by_road_year"),
+    #     departments_csv_dir=Path("KASANT/calculation/synthetic_spike_enriched/by_department_year/CSH"),
+    #     # ── папки для результатов ─────────────────────────────────────────
+    #     # roads_out_dir=Path("KASANT/cusum_results/by_road_year"),
+    #     departments_out_dir=Path("KASANT/cusum_results/by_department_year/CSH"),
+    #     # ── сводный CSV ───────────────────────────────────────────────────
+    #     summary_out_dir=Path("KASANT/cusum_results/CSH"),
+    #     # ── вывод ─────────────────────────────────────────────────────────
+    #     verbose=True,
+    #     progress_every=0,           # 0 — не выводить прогресс внутри файлов
+    # )
+
+    # # ==== Построение CUSUM-графиков (батч: дороги + департаменты) ======
+    # plot_cusum_batch(
+    #     # ── папки с CUSUM-результатами (входные) ─────────────────────────
+    #     roads_cusum_dir=Path("KASANT/cusum_results/by_road_year"),
+    #     departments_cusum_dir=Path("KASANT/cusum_results/by_department_year"),
+    #     # ── папки для сохранения графиков (выходные) ─────────────────────
+    #     roads_graph_dir=Path("KASANT/cusum_results/graphs/by_road_year"),
+    #     departments_graph_dir=Path("KASANT/cusum_results/graphs/by_department_year"),
+    #     # ── колонки (по умолчанию, можно изменить) ───────────────────────
+    #     alarm_col="CUSUM_ALARM",    # флаг тревоги CUSUM
+    #     spike_col="SPIKE_FLAG",     # флаг периода всплеска (опционально)
+    # )
+
+    # # ==== Построение CUSUM-графиков (кастомизация под CSH) ======
+    # plot_cusum_batch(
+    #     # ── папки с CUSUM-результатами (входные) ─────────────────────────
+    #     #roads_cusum_dir=Path("KASANT/cusum_results/by_road_year"),
+    #     departments_cusum_dir=Path("KASANT/cusum_results/by_department_year/CSH"),
+    #     # ── папки для сохранения графиков (выходные) ─────────────────────
+    #     # roads_graph_dir=Path("KASANT/cusum_results/graphs/by_road_year"),
+    #     departments_graph_dir=Path("KASANT/cusum_results/graphs/by_department_year/CSH"),
+    #     # ── колонки (по умолчанию, можно изменить) ───────────────────────
+    #     alarm_col="CUSUM_ALARM",    # флаг тревоги CUSUM
+    #     spike_col="SPIKE_FLAG",     # флаг периода всплеска (опционально)
+    # )
+
+    # ==== Сравнение исторических данных с результатами CUSUM — ДОРОГИ ======
+    # Для каждой дороги и каждого CUSUM-аларма:
+    #   - берёт период [начало_сезона → дата_аларма] в CUSUM-году
+    #   - сравнивает с аналогичным периодом в историческом году
+    #   - генерирует HTML-отчёт: out_dir/{Дорога}/alarm_NN_YYYY-MM-DD.html
+
+    compare_road_by_year(
+        historical_road_dir=Path("KASANT/processed/by_road_year"),
+        historical_year=2024,
+        cusum_road_dir=Path("KASANT/cusum_results/by_road_year"),
+        out_dir=Path("KASANT/cusum_results/compare/roads"),
+        top_n_reasons=10,
+        verbose=True,
+    )
+
+    # # ==== Сравнение исторических данных с результатами CUSUM — ДЕПАРТАМЕНТЫ ======
+    # # Отличие от дорог: в таблице «Изменение по ...» показывается ROAD, а не DEPARTMENT
+    #
+    # compare_department_by_year(
+    #     historical_dept_dir=Path("KASANT/processed/by_department_year"),
+    #     historical_year=2024,
+    #     cusum_dept_dir=Path("KASANT/cusum_results/by_department_year"),
+    #     out_dir=Path("KASANT/cusum_results/compare/departments"),
+    #     top_n_reasons=10,
+    #     verbose=True,
     # )
 
 

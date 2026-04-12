@@ -1277,26 +1277,36 @@ def run_arl1_delta_experiment(
 
 def _auto_h_grid_for_delta_arl1(delta: float, arl1_target: float) -> np.ndarray:
     """
-    Грубый, но практичный автоподбор диапазона h по delta и целевому ARL1.
+    Автоподбор диапазона h по δ и целевому ARL1.
 
-    Идея: при росте delta и ARL1_target разумный максимум h растёт.
+    Основа: под H1 среднее приращение решающей функции равно
+        μ₁ = ln(δ) − (δ−1)/δ  > 0,
+    откуда линейная оценка порога:
+        h_center ≈ ARL1_target × μ₁.
+
+    Окно поиска: [0.25 × h_center, 2.0 × h_center].
+    Шаг сетки выбирается так, чтобы точек было не более ~60,
+    но не крупнее 0.1 для малых h.
     """
-    # Базовый максимум по delta
-    if delta <= 1.3:
-        base_max = 5.1
-    elif delta <= 2.1:
-        base_max = 6.1
-    elif delta <= 3.1:
-        base_max = 7.1
+    mu1 = max(np.log(delta) - (delta - 1.0) / delta, 1e-6)
+
+    h_center = arl1_target * mu1
+    h_low    = max(0.1, h_center * 0.25)
+    h_high   = h_center * 2.0
+
+    h_range = h_high - h_low
+    if h_range <= 5.0:
+        step = 0.1
+    elif h_range <= 20.0:
+        step = 0.5
+    elif h_range <= 100.0:
+        step = 2.0
     else:
-        base_max = 9.1
+        # ~60 точек в диапазоне, шаг кратный 5
+        step = max(5.0, round(h_range / 60.0 / 5.0) * 5.0)
 
-    # Лёгкая поправка по целевому ARL1: чем больше ARL1_target, тем больше h_max
-    factor = 1.0 + 0.01 * max(0.0, arl1_target - 20.0)   # +1% за каждую единицу выше 20
-    factor = min(factor, 2.0)                            # не более чем ×2
-    h_max = min(base_max * factor, 15.0)
-
-    return np.arange(0.5, h_max + 1e-9, 0.1)
+    grid = np.arange(h_low, h_high + 1e-9, step)
+    return grid
 
 
 def run_arl1_target_delta_experiment(
@@ -1307,101 +1317,150 @@ def run_arl1_target_delta_experiment(
     h_grid: np.ndarray | None = None,
     max_steps: int = 200_000,
     n_workers: int | None = None,
-    arl1_tolerance: float = 0.20,   # допуск по ARL1 (±20%)
-    arl0_max: float = 300.0,        # верхняя разумная граница ARL0
-    arl0_min_factor: float = 1.5,   # ARL0_min = max(ARL1_target * factor, 10)
+    arl1_tolerance: float = 0.20,         # допуск по ARL1 (±20%)
+    arl0_max: float | None = None,        # верхняя граница ARL0;
+                                          #   None — ограничение снято (для большого ARL1)
+    arl0_min_factor: float | None = 1.5,  # ARL0_min = ARL1_target * factor;
+                                          #   None — нижнее ограничение тоже снято
+    n_runs_arl0: int | None = None,       # прогонов MC для H0;
+                                          #   None → n_runs_mc;
+                                          #   при arl0_max=None можно задать меньше (напр. 200),
+                                          #   т.к. точность ARL0 не важна
 ):
     """
     Практическая оптимизация порога h при заданных (δ, ARL1_target).
 
     Задача:
         1) найти пороги h, для которых:
-               ARL1_mc(h) ≈ ARL1_target (в пределах arl1_tolerance)
-               ARL0_min <= ARL0_mc(h) <= arl0_max
-        2) среди них выбрать h_mc с максимальной эффективностью:
-               E(h) = ARL0(h) / ARL1(h)
-        3) если подходящих h нет — выбрать h с минимальной |ARL1_mc - ARL1_target|
-           (fallback).
+               ARL1_mc(h) ≈ ARL1_target  (±arl1_tolerance)
+               ARL0_min  <= ARL0_mc(h)   (только если arl0_min_factor задан)
+               ARL0_mc(h) <= arl0_max    (только если arl0_max задан)
+        2) среди них выбрать h с максимальной эффективностью E = ARL0/ARL1
+        3) если подходящих h нет — fallback по минимальному |ARL1_mc − ARL1_target|
 
-    В отличие от вариантов с ARL0_target, здесь нет режима analytic,
-    т.к. в статье нет таблиц h(δ, ARL1).
+    Для большого ARL1_target (напр. 1000):
+        • задайте arl0_max=None  — убирает верхнее ограничение ARL0
+        • задайте arl0_min_factor=None — убирает нижнее ограничение ARL0
+        • задайте n_runs_arl0=200 — ускоряет расчёт (ARL0 огромный и неважен)
+        h_grid подбирается автоматически на основе μ₁ = ln(δ) − (δ−1)/δ
+
     Результаты сохраняются в JSON-справочник (без дублей по (δ, ARL1_target)).
     """
 
-    print(f"[mc_optimal_E ARL1-target] δ={delta_target}, ARL1_target={arl1_target}")
+    print(
+        f"[mc_optimal_E ARL1-target] "
+        f"δ={delta_target}, ARL1_target={arl1_target}, "
+        f"arl0_max={'∞' if arl0_max is None else arl0_max}"
+    )
 
     # 1) Автоподбор сетки h, если пользователь её не задал
     if h_grid is None:
         h_grid = _auto_h_grid_for_delta_arl1(delta_target, arl1_target)
 
+    print(
+        f"[GRID] h от {h_grid[0]:.2f} до {h_grid[-1]:.2f}, "
+        f"шаг ≈ {(h_grid[1]-h_grid[0]):.2f}, точек: {len(h_grid)}"
+    )
+
     # 2) Границы по ARL1 и ARL0
-    arl1_min = arl1_target * (1 - arl1_tolerance)
-    arl1_max = arl1_target * (1 + arl1_tolerance)
-    arl0_min = max(arl1_target * arl0_min_factor, 10.0)
+    arl1_min = arl1_target * (1.0 - arl1_tolerance)
+    arl1_max = arl1_target * (1.0 + arl1_tolerance)
+
+    has_arl0_lower = arl0_min_factor is not None
+    has_arl0_upper = arl0_max is not None
+
+    arl0_min = max(arl1_target * arl0_min_factor, 10.0) if has_arl0_lower else 0.0
+
+    # 3) max_steps для H1 должен быть существенно больше ARL1_target
+    max_steps_h1 = max(max_steps, int(20 * arl1_target))
+    # H0 можно симулировать с меньшим max_steps, если ARL0 нам не важен
+    max_steps_h0 = max_steps
+
+    _n_runs_arl0 = n_runs_arl0 if n_runs_arl0 is not None else n_runs_mc
 
     best_h: float | None = None
     best_E: float = -np.inf
     best_arl0: float | None = None
     best_arl1: float | None = None
 
-    # Для fallback-режима будем сохранять все точки
     all_candidates: list[dict[str, float]] = []
 
-    # 3) Перебор порогов h
+    # 4) Перебор порогов h
     for h in h_grid:
-        arl0_mc, arl1_mc, E_mc = estimate_metrics_mc_parallel(
-            delta_target,
-            h,
-            n_runs_arl0=n_runs_mc,
-            n_runs_arl1=n_runs_mc,
-            max_steps=max_steps,
-            n_workers=n_workers,
-        )
 
-        all_candidates.append(
-            {
-                "h": h,
-                "ARL0_mc": arl0_mc,
-                "ARL1_mc": arl1_mc,
-                "E_mc": E_mc,
-            }
+        # H0 и H1 с разными max_steps
+        if _n_runs_arl0 > 0:
+            args0 = [(delta_target, h, "H0", max_steps_h0, None) for _ in range(_n_runs_arl0)]
+        else:
+            args0 = []
+        args1 = [(delta_target, h, "H1", max_steps_h1, None) for _ in range(n_runs_mc)]
+
+        _workers = n_workers if n_workers is not None else cpu_count()
+
+        with Pool(_workers) as pool:
+            results = pool.map(_mc_single_arg, args0 + args1)
+
+        t0 = results[:len(args0)]
+        t1 = results[len(args0):]
+
+        arl0_mc = float(np.mean(t0)) if t0 else float("inf")
+        arl1_mc = float(np.mean(t1))
+
+        # E_mc: если ARL0 не измерялся (n_runs_arl0=0) или упёрся в потолок,
+        # используем как эффективность близость ARL1_mc к цели (обратное расстояние).
+        # Это гарантирует корректный выбор наилучшего h даже при arl0_mc = inf.
+        if _n_runs_arl0 == 0:
+            # нет H0-данных → сортируем только по близости к ARL1_target
+            E_mc = 1.0 / (abs(arl1_mc - arl1_target) + 1e-6)
+        else:
+            E_mc = arl0_mc / arl1_mc if arl1_mc > 0 else 0.0
+
+        all_candidates.append({"h": h, "ARL0_mc": arl0_mc, "ARL1_mc": arl1_mc, "E_mc": E_mc})
+
+        arl0_str = f"{arl0_mc:.1f}" if arl0_mc != float("inf") else "∞"
+        print(
+            f"  h={h:.2f} | ARL0={arl0_str} | ARL1={arl1_mc:.1f} | E={E_mc:.4f}"
         )
 
         # Фильтр по ARL1_target
         if not (arl1_min <= arl1_mc <= arl1_max):
             continue
 
-        # Фильтр по ARL0 (двойное ограничение)
-        if not (arl0_min <= arl0_mc <= arl0_max):
+        # Фильтр по ARL0 (только если ограничения заданы)
+        if has_arl0_lower and arl0_mc < arl0_min:
+            continue
+        if has_arl0_upper and arl0_mc > arl0_max:
             continue
 
         # Максимизация E среди допустимых
         if E_mc > best_E:
-            best_E = E_mc
-            best_h = h
+            best_E   = E_mc
+            best_h   = h
             best_arl0 = arl0_mc
             best_arl1 = arl1_mc
 
-    # 4) Fallback, если не найдено ни одного h, удовлетворяющего обоим ограничениям
+    # 5) Fallback — ближайший по ARL1
     if best_h is None:
-        print("[WARN ARL1-target] Нет h, удовлетворяющих ARL1 и ARL0 ограничениям. Ищу ближайший по ARL1.")
-
+        print(
+            "[WARN ARL1-target] Нет h, удовлетворяющих ограничениям. "
+            "Fallback: выбираю по минимальному |ARL1_mc − ARL1_target|."
+        )
         best_score = np.inf
         for cand in all_candidates:
-            # штраф: как далеко ARL1_mc от цели + штраф за превышение ARL0_max
             d_arl1 = abs(cand["ARL1_mc"] - arl1_target) / max(arl1_target, 1e-6)
+
+            # штраф за нарушение ARL0_max — только если ограничение задано
             penalty_arl0 = 0.0
-            if cand["ARL0_mc"] > arl0_max:
+            if has_arl0_upper and cand["ARL0_mc"] > arl0_max:
                 penalty_arl0 = (cand["ARL0_mc"] - arl0_max) / max(arl0_max, 1e-6)
 
             score = d_arl1 + penalty_arl0
-
             if score < best_score:
                 best_score = score
-                best_h = cand["h"]
-                best_E = cand["E_mc"]
-                best_arl0 = cand["ARL0_mc"]
-                best_arl1 = cand["ARL1_mc"]
+                best_h     = cand["h"]
+                best_E     = cand["E_mc"]
+                best_arl0  = cand["ARL0_mc"]
+                best_arl1  = cand["ARL1_mc"]
 
     print(
         f"[BEST ARL1-target] h={best_h:.3f}, "
@@ -1598,7 +1657,24 @@ def run_arl0_arl1_delta_experiment(
         "E_mc": best["E_mc"],
     }
 
-    data.append(record)
+    existing = [
+        r for r in data
+        if r.get("delta_target") == delta_target
+        and r.get("arl0_target") == arl0_target
+        and r.get("arl1_target") == arl1_target
+    ]
+
+    if existing:
+        old = existing[0]
+        if record["E_mc"] > old.get("E_mc", -np.inf):
+            data.remove(old)
+            data.append(record)
+            print("[UPDATE] Запись улучшена.")
+        else:
+            print("[SKIP] Старая запись лучше — не обновляем.")
+    else:
+        data.append(record)
+        print("[ADD] Новая запись добавлена.")
 
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)

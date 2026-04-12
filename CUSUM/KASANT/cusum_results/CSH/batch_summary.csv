@@ -1,0 +1,2 @@
+﻿source,csv_name,out_stem,alarm_count,events_path,full_path,error
+department,CSH-2025.csv,CSH-2025,4,KASANT\cusum_results\by_department_year\CSH\CSH-2025_cusum_events.csv,KASANT\cusum_results\by_department_year\CSH\CSH-2025.csv,

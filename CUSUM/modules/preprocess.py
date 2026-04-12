@@ -509,12 +509,22 @@ def plot_cumulative_events_with_cusum_alarms(
     spike_col: str = "SPIKE_FLAG",
 ):
     """
-    ТОЧНАЯ копия plot_cumulative_events
-    + периоды всплесков (SPIKE_FLAG)
-    + вертикальные пунктирные линии CUSUM.
+    График накопленного числа событий (INDEX) с наложением:
+        • периодов всплесков (SPIKE_FLAG) — закрашенные красные зоны
+        • CUSUM-сигналов (CUSUM_ALARM)   — синие вертикальные линии
 
-    Позволяет наглядно проверить,
-    что CUSUM-сигналы попадают внутрь периодов сбоя.
+    Позволяет наглядно проверить, что CUSUM-сигналы
+    попадают внутрь периодов сбоя.
+
+    Параметры
+    ----------
+    df            : DataFrame с колонками START_TIME, INDEX, CUSUM_ALARM
+                    (и опционально SPIKE_FLAG)
+    save_dir      : папка для сохранения графика
+    filename_stem : базовое имя файла (без расширения)
+    alarm_col     : имя колонки с флагом тревоги (по умолчанию CUSUM_ALARM)
+    spike_col     : имя колонки с периодом всплеска (по умолчанию SPIKE_FLAG)
+                    если колонка отсутствует — зоны всплесков не рисуются
     """
 
     import matplotlib.pyplot as plt
@@ -527,8 +537,7 @@ def plot_cumulative_events_with_cusum_alarms(
     df["START_TIME"] = pd.to_datetime(df["START_TIME"], errors="coerce")
     df = df.sort_values("START_TIME").reset_index(drop=True)
 
-    if spike_col not in df.columns:
-        raise ValueError(f"В DataFrame нет колонки {spike_col}")
+    has_spike = spike_col in df.columns
 
     plt.figure(figsize=(12, 6))
 
@@ -542,35 +551,36 @@ def plot_cumulative_events_with_cusum_alarms(
     )
 
     # =====================================================
-    # 2. ПЕРИОДЫ ВСПЛЕСКОВ (SPIKE_FLAG)
+    # 2. ПЕРИОДЫ ВСПЛЕСКОВ (SPIKE_FLAG) — если колонка есть
     # =====================================================
-    spike = df[spike_col].values
-    times = df["START_TIME"].values
+    if has_spike:
+        spike = df[spike_col].values
+        times = df["START_TIME"].values
 
-    segments = []
-    in_seg = False
-    start_t = None
+        segments = []
+        in_seg = False
+        start_t = None
 
-    for i in range(len(spike)):
-        if spike[i] == 1 and not in_seg:
-            in_seg = True
-            start_t = times[i]
-        if spike[i] == 0 and in_seg:
-            segments.append((start_t, times[i - 1]))
-            in_seg = False
+        for i in range(len(spike)):
+            if spike[i] == 1 and not in_seg:
+                in_seg = True
+                start_t = times[i]
+            if spike[i] == 0 and in_seg:
+                segments.append((start_t, times[i - 1]))
+                in_seg = False
 
-    if in_seg:
-        segments.append((start_t, times[-1]))
+        if in_seg:
+            segments.append((start_t, times[-1]))
 
-    for idx, (s, e) in enumerate(segments):
-        plt.axvline(s, color="red", linestyle="--", linewidth=1.2)
-        plt.axvline(e, color="red", linestyle="--", linewidth=1.2)
-        plt.axvspan(
-            s, e,
-            color="red",
-            alpha=0.15,
-            label="Период всплеска" if idx == 0 else None
-        )
+        for idx, (s, e) in enumerate(segments):
+            plt.axvline(s, color="red", linestyle="--", linewidth=1.2)
+            plt.axvline(e, color="red", linestyle="--", linewidth=1.2)
+            plt.axvspan(
+                s, e,
+                color="red",
+                alpha=0.15,
+                label="Период всплеска" if idx == 0 else None
+            )
 
     # =====================================================
     # 3. ВЕРТИКАЛЬНЫЕ ЛИНИИ CUSUM
@@ -619,6 +629,204 @@ def plot_cumulative_events_with_cusum_alarms(
     print(f"📈 CUSUM-график с периодами всплесков сохранён: {out_path}")
 
     return out_path
+
+
+# ============================================================
+# 5. БАТЧ-ПОСТРОЕНИЕ ГРАФИКОВ CUSUM (папки дорог и департаментов)
+# ============================================================
+
+def _find_cusum_full_csvs(directory: Path) -> list[Path]:
+    """
+    Возвращает список CSV-файлов с результатами CUSUM из папки directory.
+
+    Признаки «полного» CUSUM-файла (имеет колонку CUSUM_ALARM):
+        • заканчивается на _cusum_full.csv  — новое соглашение
+        • либо не заканчивается на _cusum_events.csv
+          и не является batch_summary.csv   — старое соглашение
+
+    Файлы сортируются по имени.
+    """
+    all_csvs = sorted(directory.glob("*.csv"))
+
+    result = []
+    for p in all_csvs:
+        name = p.name
+        # явное новое соглашение
+        if name.endswith("_cusum_full.csv"):
+            result.append(p)
+            continue
+        # старое соглашение: исключаем events и summary
+        if name.endswith("_cusum_events.csv"):
+            continue
+        if name == "batch_summary.csv":
+            continue
+        result.append(p)
+
+    return result
+
+
+def _stem_from_cusum_full(path: Path) -> str:
+    """
+    Возвращает базовое имя файла без CUSUM-суффикса:
+        Дальневосточная-2025_cusum_full  →  Дальневосточная-2025
+        Дальневосточная-2025             →  Дальневосточная-2025
+    """
+    stem = path.stem
+    if stem.endswith("_cusum_full"):
+        stem = stem[: -len("_cusum_full")]
+    return stem
+
+
+def plot_cusum_batch(
+    *,
+    roads_cusum_dir: Path | None = None,
+    departments_cusum_dir: Path | None = None,
+    roads_graph_dir: Path | None = None,
+    departments_graph_dir: Path | None = None,
+    alarm_col: str = "CUSUM_ALARM",
+    spike_col: str = "SPIKE_FLAG",
+) -> list[dict]:
+    """
+    Батч-построение CUSUM-графиков по папкам с результатами.
+
+    Структура входных папок
+    -----------------------
+        roads_cusum_dir/
+            Дальневосточная-2025.csv          ← полный файл с CUSUM_ALARM
+            Дальневосточная-2025_cusum_events.csv
+            ...
+        departments_cusum_dir/
+            CSH-2025.csv
+            CSH-2025_cusum_events.csv
+            ...
+
+    Структура выходных папок
+    ------------------------
+        roads_graph_dir/
+            Дальневосточная-2025_cumulative_cusum.pdf
+            Горьковская-2025_cumulative_cusum.pdf
+            ...
+        departments_graph_dir/
+            CSH-2025_cumulative_cusum.pdf
+            ...
+
+    Параметры
+    ---------
+    roads_cusum_dir       : папка с CUSUM-результатами по дорогам
+                            (None — пропустить)
+    departments_cusum_dir : папка с CUSUM-результатами по департаментам
+                            (None — пропустить)
+    roads_graph_dir       : папка для графиков дорог
+                            (обязательна, если roads_cusum_dir задан)
+    departments_graph_dir : папка для графиков департаментов
+                            (обязательна, если departments_cusum_dir задан)
+    alarm_col             : колонка с флагом тревоги (CUSUM_ALARM)
+    spike_col             : колонка с периодом всплеска (SPIKE_FLAG);
+                            если отсутствует в файле — зоны не рисуются
+
+    Возвращает
+    ----------
+    list[dict] — сводная таблица:
+        source      : "road" | "department"
+        csv_name    : имя входного файла
+        stem        : базовое имя (Дальневосточная-2025)
+        graph_path  : путь к сохранённому PDF
+        alarm_count : количество CUSUM-тревог в файле
+        error       : текст ошибки или None
+    """
+    from typing import Optional
+
+    if roads_cusum_dir is None and departments_cusum_dir is None:
+        raise ValueError(
+            "Укажите хотя бы одну из папок: "
+            "roads_cusum_dir или departments_cusum_dir"
+        )
+
+    # ── сборка задач: (csv_path, graph_dir, source_label) ────────────────────
+    tasks: list[tuple[Path, Path, str]] = []
+
+    if roads_cusum_dir is not None:
+        if roads_graph_dir is None:
+            raise ValueError("roads_graph_dir обязателен при заданном roads_cusum_dir")
+        files = _find_cusum_full_csvs(Path(roads_cusum_dir))
+        if not files:
+            print(f"[WARN] В папке дорог не найдено CUSUM-файлов: {roads_cusum_dir}")
+        for f in files:
+            tasks.append((f, Path(roads_graph_dir), "road"))
+
+    if departments_cusum_dir is not None:
+        if departments_graph_dir is None:
+            raise ValueError(
+                "departments_graph_dir обязателен при заданном departments_cusum_dir"
+            )
+        files = _find_cusum_full_csvs(Path(departments_cusum_dir))
+        if not files:
+            print(f"[WARN] В папке департаментов не найдено CUSUM-файлов: {departments_cusum_dir}")
+        for f in files:
+            tasks.append((f, Path(departments_graph_dir), "department"))
+
+    if not tasks:
+        print("[WARN] Нет файлов для построения графиков.")
+        return []
+
+    total = len(tasks)
+    print(f"\n{'='*52}")
+    print(f"  CUSUM PLOT BATCH — файлов: {total}")
+    print(f"{'='*52}\n")
+
+    summary: list[dict] = []
+
+    for idx, (csv_path, graph_dir, source) in enumerate(tasks, start=1):
+        stem = _stem_from_cusum_full(csv_path)
+        label = f"[{idx}/{total}] {source.upper()} | {stem}"
+        print(f"  {label}")
+
+        record: dict = {
+            "source":      source,
+            "csv_name":    csv_path.name,
+            "stem":        stem,
+            "graph_path":  None,
+            "alarm_count": 0,
+            "error":       None,
+        }
+
+        try:
+            df = pd.read_csv(csv_path)
+
+            if alarm_col not in df.columns:
+                raise ValueError(
+                    f"Колонка '{alarm_col}' не найдена в {csv_path.name}. "
+                    f"Доступные: {list(df.columns)}"
+                )
+
+            alarm_count = int(df[alarm_col].sum())
+
+            out_path = plot_cumulative_events_with_cusum_alarms(
+                df=df,
+                save_dir=graph_dir,
+                filename_stem=stem,
+                alarm_col=alarm_col,
+                spike_col=spike_col,
+            )
+
+            record["alarm_count"] = alarm_count
+            record["graph_path"]  = str(out_path)
+
+        except Exception as exc:
+            record["error"] = str(exc)
+            print(f"  [ERROR] {label} — {exc}")
+
+    ok_count  = sum(1 for r in summary if r["error"] is None)
+    err_count = sum(1 for r in summary if r["error"] is not None)
+
+    print(f"\n{'='*52}")
+    print(f"  CUSUM PLOT BATCH ЗАВЕРШЁН")
+    print(f"  Успешно:  {ok_count} / {total}")
+    print(f"  Ошибок:   {err_count}")
+    print(f"{'='*52}\n")
+
+    return summary
+
 
 # Функция для оценки коэффициента авторегрессии первого порядка (rho) по полю TIME_DIFF и теста Ljung–Box для всех CSV-файлов в нескольких папках, с сохранением отчёта в итоговый CSV.
 def estimate_ar1_for_directories(
