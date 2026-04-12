@@ -263,18 +263,18 @@
     <h1>Северо-Кавказская</h1>
     <p>Дорога: Северо-Кавказская · Сезон: Лето</p>
   </div>
-  <div class="alarm-badge">⚠ Аларм №04</div>
+  <div class="alarm-badge">⚠ Alarm №04</div>
 </div>
 
 <div class="container">
 
   <!-- ══════════════════════════════════ СВОДНАЯ ИНФОРМАЦИЯ ══ -->
   <div class="card">
-    <div class="card-header"><span class="icon">ℹ</span> Параметры аларма</div>
+    <div class="card-header"><span class="icon">ℹ</span> Параметры события </div>
     <div class="card-body">
       <div class="meta-grid">
         <div class="meta-item">
-          <label>Дата и время аларма</label>
+          <label>Дата и время события</label>
           <span>12.07.2025&nbsp;02:12:15</span>
         </div>
         <div class="meta-item">
@@ -295,10 +295,10 @@
         </div>
         <div class="meta-item">
           <label>delta (оценка разладки)</label>
-          <span>2.19 &nbsp;<span style="color:#e94560;font-size:12px">▲ рост потока</span></span>
+          <span>2.19 &nbsp;<span style="color:#e94560;font-size:12px">▲ рост интенсивности</span></span>
         </div>
         <div class="meta-item">
-          <label>CUSUM S в момент аларма</label>
+          <label>CUSUM в момент события</label>
           <span>3.22</span>
         </div>
         <div class="meta-item">
@@ -339,12 +339,24 @@
               <th>Категория</th>
               <th class="num">2025</th>
               <th class="num">2024</th>
-              <th class="bar-cell">Доля влияния фактора</th>
+              <th class="bar-cell">Доля влияния фактора в текущем году</th>
               <th class="num">Изменение</th>
             </tr>
           </thead>
           <tbody>
                         <tr>
+              <td><strong>1</strong></td>
+              <td class="num">25</td>
+              <td class="num">1</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:71%"></div></div>
+                  <span class="bar-num">27%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ +2400.0%</span></td>
+            </tr>
+            <tr>
               <td><strong>2</strong></td>
               <td class="num">35</td>
               <td class="num">25</td>
@@ -367,18 +379,6 @@
                 </div>
               </td>
               <td class="num"><span class="pct down">▼ −55.6%</span></td>
-            </tr>
-            <tr>
-              <td><strong>1</strong></td>
-              <td class="num">25</td>
-              <td class="num">1</td>
-              <td class="bar-cell">
-                <div class="bar-wrap">
-                  <div class="bar-bg"><div class="bar-fill curr" style="width:71%"></div></div>
-                  <span class="bar-num">27%</span>
-                </div>
-              </td>
-              <td class="num"><span class="pct up">▲ +2400.0%</span></td>
             </tr>
           </tbody>
         </table>
@@ -403,6 +403,18 @@
           </thead>
           <tbody>
                         <tr>
+              <td>Перегорание лампы линзового светофора</td>
+              <td class="num">18</td>
+              <td class="num">0</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:64%"></div></div>
+                  <span class="bar-num">20%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ новый фактор</span></td>
+            </tr>
+            <tr>
               <td>Лампы, перегорание основной нити</td>
               <td class="num">28</td>
               <td class="num">3</td>
@@ -425,18 +437,6 @@
                 </div>
               </td>
               <td class="num"><span class="pct up">▲ +450.0%</span></td>
-            </tr>
-            <tr>
-              <td>Перегорание лампы линзового светофора</td>
-              <td class="num">18</td>
-              <td class="num">0</td>
-              <td class="bar-cell">
-                <div class="bar-wrap">
-                  <div class="bar-bg"><div class="bar-fill curr" style="width:64%"></div></div>
-                  <span class="bar-num">20%</span>
-                </div>
-              </td>
-              <td class="num"><span class="pct up">▲ новые фактор</span></td>
             </tr>
             <tr>
               <td>Неисправность</td>
@@ -545,19 +545,7 @@
           </thead>
           <tbody>
                         <tr>
-              <td>CSH</td>
-              <td class="num">89</td>
-              <td class="num">95</td>
-              <td class="bar-cell">
-                <div class="bar-wrap">
-                  <div class="bar-bg"><div class="bar-fill curr" style="width:100%"></div></div>
-                  <span class="bar-num">97%</span>
-                </div>
-              </td>
-              <td class="num"><span class="pct down">▼ −6.3%</span></td>
-            </tr>
-            <tr>
-              <td>CT</td>
+              <td>ЦТ</td>
               <td class="num">3</td>
               <td class="num">3</td>
               <td class="bar-cell">
@@ -567,6 +555,18 @@
                 </div>
               </td>
               <td class="num"><span class="pct zero">→ 0.0%</span></td>
+            </tr>
+            <tr>
+              <td>ЦШ</td>
+              <td class="num">89</td>
+              <td class="num">95</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:100%"></div></div>
+                  <span class="bar-num">97%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct down">▼ −6.3%</span></td>
             </tr>
           </tbody>
         </table>
@@ -591,16 +591,16 @@
           </thead>
           <tbody>
                         <tr>
-              <td>С-КАВ, ШЧ-18</td>
-              <td class="num">34</td>
-              <td class="num">32</td>
+              <td>С-КАВ, ШЧ-14</td>
+              <td class="num">12</td>
+              <td class="num">1</td>
               <td class="bar-cell">
                 <div class="bar-wrap">
-                  <div class="bar-bg"><div class="bar-fill curr" style="width:100%"></div></div>
-                  <span class="bar-num">37%</span>
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:35%"></div></div>
+                  <span class="bar-num">13%</span>
                 </div>
               </td>
-              <td class="num"><span class="pct up">▲ +6.2%</span></td>
+              <td class="num"><span class="pct up">▲ +1100.0%</span></td>
             </tr>
             <tr>
               <td>С-КАВ, ШЧ-7</td>
@@ -627,18 +627,6 @@
               <td class="num"><span class="pct up">▲ +36.4%</span></td>
             </tr>
             <tr>
-              <td>С-КАВ, ШЧ-14</td>
-              <td class="num">12</td>
-              <td class="num">1</td>
-              <td class="bar-cell">
-                <div class="bar-wrap">
-                  <div class="bar-bg"><div class="bar-fill curr" style="width:35%"></div></div>
-                  <span class="bar-num">13%</span>
-                </div>
-              </td>
-              <td class="num"><span class="pct up">▲ +1100.0%</span></td>
-            </tr>
-            <tr>
               <td>С-КАВ, ШЧ-12</td>
               <td class="num">11</td>
               <td class="num">10</td>
@@ -649,6 +637,18 @@
                 </div>
               </td>
               <td class="num"><span class="pct up">▲ +10.0%</span></td>
+            </tr>
+            <tr>
+              <td>С-КАВ, ШЧ-18</td>
+              <td class="num">34</td>
+              <td class="num">32</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:100%"></div></div>
+                  <span class="bar-num">37%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ +6.2%</span></td>
             </tr>
             <tr>
               <td>С-КАВ, ИЧ-2 ТАГАНРОГ Ш</td>
@@ -777,6 +777,7 @@
   </div>
 
   <!-- ══════════════════════════════════════ ПРОСТОИ ══ -->
+  <!-- Заменить блок простоев/подписи на использование поездо-часов -->
   <div class="card">
     <div class="card-header"><span class="icon">⏱</span> Изменение суммарных простоев (поездо-часы)</div>
     <div class="card-body">
@@ -785,48 +786,48 @@
           <div class="dt-title">🚂 Грузовые перевозки</div>
           <div class="dt-row">
             <span class="dt-year">2025</span>
-            <span class="dt-val">0 мин</span>
+            <span class="dt-val">15 523.8 поездо-ч</span>
           </div>
           <div class="dt-row">
             <span class="dt-year">2024</span>
-            <span class="dt-val">0 мин</span>
+            <span class="dt-val">60.6 поездо-ч</span>
           </div>
           <div class="dt-divider"></div>
           <div class="dt-change">
             <span class="label">Изменение</span>
-            <span class="val-zero">→ 0%</span>
+            <span class="val-up">▲ +25516.7%</span>
           </div>
         </div>
                 <div class="dt-card">
           <div class="dt-title">🚆 Пассажирские перевозки</div>
           <div class="dt-row">
             <span class="dt-year">2025</span>
-            <span class="dt-val">0 мин</span>
+            <span class="dt-val">1 195.5 поездо-ч</span>
           </div>
           <div class="dt-row">
             <span class="dt-year">2024</span>
-            <span class="dt-val">0 мин</span>
+            <span class="dt-val">54.5 поездо-ч</span>
           </div>
           <div class="dt-divider"></div>
           <div class="dt-change">
             <span class="label">Изменение</span>
-            <span class="val-zero">→ 0%</span>
+            <span class="val-up">▲ +2094.0%</span>
           </div>
         </div>
                 <div class="dt-card">
           <div class="dt-title">🚋 Пригородные перевозки</div>
           <div class="dt-row">
             <span class="dt-year">2025</span>
-            <span class="dt-val">0 мин</span>
+            <span class="dt-val">2 854.8 поездо-ч</span>
           </div>
           <div class="dt-row">
             <span class="dt-year">2024</span>
-            <span class="dt-val">0 мин</span>
+            <span class="dt-val">25.1 поездо-ч</span>
           </div>
           <div class="dt-divider"></div>
           <div class="dt-change">
             <span class="label">Изменение</span>
-            <span class="val-zero">→ 0%</span>
+            <span class="val-up">▲ +11278.4%</span>
           </div>
         </div>
       </div>

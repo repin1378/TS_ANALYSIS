@@ -161,30 +161,34 @@
       color: #7b8ab8;
       border-bottom: 2px solid #eef0f5;
     }
-    thead th.num { text-align: right; }
+    thead th.num { text-align: center; }
     tbody tr { border-bottom: 1px solid #f0f2f5; transition: background .15s; }
     tbody tr:last-child { border-bottom: none; }
     tbody tr:hover { background: #fafbff; }
-    tbody td { padding: 10px 14px; }
-    tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    tbody td { padding: 10px 14px; vertical-align: middle; }
+    tbody td.num {
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
 
     /* Бейдж % изменения */
     .pct {
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 4px;
       font-weight: 700;
       font-size: 13px;
-      padding: 2px 10px;
+      padding: 3px 10px;
       border-radius: 20px;
-      float: right;
+      white-space: nowrap;
     }
     .pct.up   { background: #fff1f3; color: #e94560; }
     .pct.down { background: #f0faf4; color: #2dc653; }
     .pct.zero { background: #f5f7fb; color: #7b8ab8; }
 
     /* Мини-бар прогресса */
-    .bar-cell { min-width: 120px; }
+    .bar-cell { min-width: 160px; text-align: left; }
     .bar-wrap { display: flex; align-items: center; gap: 8px; }
     .bar-bg {
       flex: 1;
@@ -196,7 +200,7 @@
     .bar-fill { height: 100%; border-radius: 3px; }
     .bar-fill.curr { background: #4361ee; }
     .bar-fill.prev { background: #a8b2d8; }
-    .bar-num { font-size: 12px; color: #7b8ab8; width: 30px; text-align: right; }
+    .bar-num { font-size: 12px; color: #7b8ab8; min-width: 34px; text-align: right; }
 
     /* ── Простои ────────────────────────────────────────────── */
     .downtime-grid {
@@ -263,18 +267,18 @@
     <h1>{{ENTITY_NAME}}</h1>
     <p>{{SUBTITLE}}</p>
   </div>
-  <div class="alarm-badge">⚠ Аларм №{{ALARM_NUMBER}}</div>
+  <div class="alarm-badge">⚠ ALARM №{{ALARM_NUMBER}}</div>
 </div>
 
 <div class="container">
 
   <!-- ══════════════════════════════════ СВОДНАЯ ИНФОРМАЦИЯ ══ -->
   <div class="card">
-    <div class="card-header"><span class="icon">ℹ</span> Параметры аларма</div>
+    <div class="card-header"><span class="icon">ℹ</span> Параметры события</div>
     <div class="card-body">
       <div class="meta-grid">
         <div class="meta-item">
-          <label>Дата и время аларма</label>
+          <label>Дата и время события</label>
           <span>{{ALARM_DATETIME_FMT}}</span>
         </div>
         <div class="meta-item">
@@ -295,10 +299,10 @@
         </div>
         <div class="meta-item">
           <label>delta (оценка разладки)</label>
-          <span>{{DELTA_HAT_FMT}} &nbsp;<span style="color:#e94560;font-size:12px">▲ рост потока</span></span>
+          <span>{{DELTA_HAT_FMT}} &nbsp;<span style="color:#e94560;font-size:12px">▲ рост интенсивности</span></span>
         </div>
         <div class="meta-item">
-          <label>CUSUM S в момент аларма</label>
+          <label>CUSUM в момент события</label>
           <span>{{CUSUM_S_FMT}}</span>
         </div>
         <div class="meta-item">
@@ -339,7 +343,7 @@
               <th>Категория</th>
               <th class="num">{{CUSUM_YEAR}}</th>
               <th class="num">{{HIST_YEAR}}</th>
-              <th class="bar-cell">Доля влияния фактора</th>
+              <th class="bar-cell">Доля влияния фактора в текущем году</th>
               <th class="num">Изменение</th>
             </tr>
           </thead>

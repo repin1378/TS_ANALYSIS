@@ -40,10 +40,28 @@ _CATEGORIES = [1, 2, 3]
 
 _TEMPLATE_DIR = Path(__file__).parent.parent / "html_template"
 
+# Маппинг кодов подразделений → отображаемые названия (только для HTML)
+_DEPT_DISPLAY: dict[str, str] = {
+    "CT":  "ЦТ",
+    "CV":  "ЦВ",
+    "CSH": "ЦШ",
+}
+
 
 # ============================================================
 # Вспомогательные утилиты
 # ============================================================
+
+def _dept_display(name: str) -> str:
+    """Возвращает отображаемое название подразделения для HTML-отчёта.
+
+        "CT"  → "ЦТ"
+        "CV"  → "ЦВ"
+        "CSH" → "ЦШ"
+        всё остальное → без изменений
+    """
+    return _DEPT_DISPLAY.get(str(name).strip(), name)
+
 
 def _extract_entity_name(filepath: Path) -> str:
     """
@@ -137,17 +155,60 @@ def _prepare_hist(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _fmt_minutes(v: float) -> str:
+def _fmt_train_hours(v: float) -> str:
     """
-    Форматирует минуты с пробелом как разделителем тысяч.
+    Форматирует продолжительность в поездо-часах с пробелом как разделителем тысяч.
 
-        14280.0  →  "14 280 мин"
-        960.0    →  "960 мин"
+        31246.28  →  "31 246.3 поездо-ч"
+        26.0      →  "26 поездо-ч"
     """
-    int_v = int(round(v))
-    # Пробел как разделитель тысяч (неразрывный пробел)
-    formatted = f"{int_v:,}".replace(",", "\u00a0")
-    return f"{formatted} мин"
+    hours = float(v or 0.0)
+    if abs(hours - round(hours)) < 0.05:
+        int_v = int(round(hours))
+        formatted = f"{int_v:,}".replace(",", "\u00a0")
+        return f"{formatted}\u00a0поездо-ч"
+
+    formatted = f"{hours:,.1f}".replace(",", "\u00a0")
+    return f"{formatted}\u00a0поездо-ч"
+
+
+def _parse_train_hours(value: object) -> float:
+    """
+    Преобразует значение таймаута к числу поездо-часов.
+
+    Поддерживает форматы:
+      - "0,67ч"  →  0.67
+      - "1.18 ч" →  1.18
+      - "11"     →  11.0
+      - 1.5      →  1.5   (int/float/numpy scalar)
+      - NaN / None / "" / "nan" / "none"  →  0.0
+    """
+    # 1. NaN / None / pd.NA / np.nan
+    try:
+        if pd.isna(value):
+            return 0.0
+    except (TypeError, ValueError):
+        pass
+
+    # 2. Числовые скаляры (int, float, np.int64, np.float64 и т.д.)
+    try:
+        fv = float(value)  # type: ignore[arg-type]
+        if not (fv != fv):  # проверка на NaN через self-inequality
+            return fv
+        return 0.0
+    except (TypeError, ValueError):
+        pass
+
+    # 3. Строковые значения
+    s = str(value).strip().replace("\xa0", "").replace("\u00a0", "").replace(" ", "")
+    if not s or s.lower() in ("nan", "none", "null", "na", "<na>"):
+        return 0.0
+
+    match = re.search(r"[-+]?\d+(?:[.,]\d+)?", s)
+    if not match:
+        return 0.0
+
+    return float(match.group(0).replace(",", "."))
 
 
 # ============================================================
@@ -166,13 +227,26 @@ def _pct_badge(curr: int, prev: int) -> str:
     if prev == 0 and curr == 0:
         return '<span class="pct zero">→ 0.0%</span>'
     if prev == 0:
-        return '<span class="pct up">▲ новые фактор</span>'
+        return '<span class="pct up">▲ новый фактор</span>'
     pct = (curr - prev) / prev * 100
     if abs(pct) < 0.05:
         return '<span class="pct zero">→ 0.0%</span>'
     if pct > 0:
         return f'<span class="pct up">▲ +{pct:.1f}%</span>'
     return f'<span class="pct down">▼ −{abs(pct):.1f}%</span>'
+
+
+def _pct_growth_key(t: tuple[str, int, int]) -> float:
+    """Ключ сортировки: процент роста по убыванию.
+
+    Новые факторы (prev=0, curr>0) → +inf (идут первыми).
+    Исчезнувшие факторы (curr=0, prev>0) → -100%.
+    Оба нуля → 0%.
+    """
+    _, curr, prev = t
+    if prev == 0:
+        return float("inf") if curr > 0 else 0.0
+    return (curr - prev) / prev * 100
 
 
 def _render_comparison_rows(
@@ -187,13 +261,15 @@ def _render_comparison_rows(
 
     Parameters
     ----------
-    data       : список (label, curr_count, prev_count), сортируется по curr desc
+    data       : список (label, curr_count, prev_count)
     curr_total : суммарное количество текущих событий (для расчёта доли)
     bold_label : обернуть ячейку label в <strong> (для категорий)
-    max_rows   : максимум строк (берём первые max_rows после сортировки)
+    max_rows   : максимум строк
+
+    Сортировка: сначала факторы с наибольшим % роста (curr/prev - 1),
+    новые факторы (prev=0) идут первыми.
     """
-    # Сортировка по curr_count по убыванию, ограничение строк
-    sorted_data = sorted(data, key=lambda t: t[1], reverse=True)[:max_rows]
+    sorted_data = sorted(data, key=_pct_growth_key, reverse=True)[:max_rows]
 
     if not sorted_data:
         return ""
@@ -240,15 +316,15 @@ def _render_downtime_card(
     hist_year: str,
 ) -> str:
     """
-    Генерирует полный <div class="dt-card">...</div> для раздела простоев.
+    Генерирует полный <div class="dt-card">...</div> для раздела простоев в поездо-часах.
     """
-    curr_fmt = _fmt_minutes(curr)
-    prev_fmt = _fmt_minutes(prev)
+    curr_fmt = _fmt_train_hours(curr)
+    prev_fmt = _fmt_train_hours(prev)
 
     if prev == 0 and curr == 0:
         change_html = '<span class="val-zero">→ 0%</span>'
     elif prev == 0:
-        change_html = '<span class="val-up">▲ новые</span>'
+        change_html = '<span class="val-up">▲ новый фактор</span>'
     else:
         pct = (curr - prev) / prev * 100
         if abs(pct) < 0.05:
@@ -323,24 +399,46 @@ def _downtime_sum(
     label: str = "",
     verbose: bool = False,
 ) -> float:
-    """Суммарный простой = SUM(COUNT * TIMEOUT).
+    """Суммарный простой в поездо-часах = SUM(COUNT * TIMEOUT).
+
+    В исходных CSV поля *_TIMEOUT могут храниться как:
+      - строки вида "0,67ч" или "1.18ч"
+      - числа (int или float)
+      - пустые строки / NaN — считаются как 0
 
     Если колонки отсутствуют — возвращает 0.0 и при verbose=True печатает предупреждение.
     """
+    tag = f" [{label}]" if label else ""
+
     if df.empty:
         return 0.0
+
     missing = [c for c in (cnt_col, tmt_col) if c not in df.columns]
     if missing:
         if verbose:
-            tag = f" [{label}]" if label else ""
             print(
-                f"    [WARN]{tag} колонки {missing} не найдены в данных "
-                f"(доступны: {list(df.columns)})"
+                f"    [WARN]{tag} колонки {missing} не найдены "
+                f"(доступны: {sorted(df.columns.tolist())})"
             )
         return 0.0
+
     cnt = pd.to_numeric(df[cnt_col], errors="coerce").fillna(0.0)
-    tmt = pd.to_numeric(df[tmt_col], errors="coerce").fillna(0.0)
-    return float((cnt * tmt).sum())
+    tmt = df[tmt_col].apply(_parse_train_hours)
+
+    result = float((cnt * tmt).sum())
+
+    if verbose and result == 0.0:
+        cnt_nonzero = int((cnt > 0).sum())
+        tmt_nonzero = int((tmt > 0).sum())
+        sample_cnt = df[cnt_col].dropna().head(3).tolist()
+        sample_tmt = df[tmt_col].dropna().head(3).tolist()
+        print(
+            f"    [DEBUG]{tag} результат=0 | строк={len(df)} | "
+            f"cnt>0={cnt_nonzero} dtype={df[cnt_col].dtype} примеры={sample_cnt} | "
+            f"tmt>0={tmt_nonzero} dtype={df[tmt_col].dtype} примеры={sample_tmt}"
+        )
+
+    return result
 
 
 # ============================================================
@@ -411,8 +509,13 @@ def _generate_alarm_html(
     curr_cross = _count_by_dim(curr_df, cross_col)
     prev_cross = _count_by_dim(prev_df, cross_col)
     all_cross = sorted(set(curr_cross) | set(prev_cross))
+    # Для дорог: метки — названия подразделений → применяем display-маппинг
     cross_data = [
-        (v, curr_cross.get(v, 0), prev_cross.get(v, 0))
+        (
+            _dept_display(v) if entity_type == "road" else v,
+            curr_cross.get(v, 0),
+            prev_cross.get(v, 0),
+        )
         for v in all_cross
     ]
     cross_dim_rows = _render_comparison_rows(cross_data, curr_events)
@@ -488,20 +591,25 @@ def _generate_alarm_html(
         analogous_dt.strftime("%d.%m.%Y")
     )
 
+    # Отображаемое имя сущности (для департаментов применяем маппинг кодов)
+    display_name = (
+        entity_name if entity_type == "road" else _dept_display(entity_name)
+    )
+
     subtitle = (
-        f"Дорога: {html.escape(entity_name)} · Сезон: {html.escape(season)}"
+        f"Дорога: {html.escape(display_name)} · Сезон: {html.escape(season)}"
         if entity_type == "road"
-        else f"Подразделение: {html.escape(entity_name)} · Сезон: {html.escape(season)}"
+        else f"Подразделение: {html.escape(display_name)} · Сезон: {html.escape(season)}"
     )
 
     footer_text = (
         f"Сгенерировано автоматически · CUSUM Alarm Report · "
-        f"{html.escape(entity_name)} · {alarm_dt.strftime('%d.%m.%Y %H:%M:%S')}"
+        f"{html.escape(display_name)} · {alarm_dt.strftime('%d.%m.%Y %H:%M:%S')}"
     )
 
     # ── Подстановка в шаблон ─────────────────────────────────────────────────
     replacements = {
-        "{{ENTITY_NAME}}":           html.escape(entity_name),
+        "{{ENTITY_NAME}}":           html.escape(display_name),
         "{{SUBTITLE}}":              subtitle,
         "{{ALARM_NUMBER}}":          alarm_num_str,
         "{{ALARM_DATETIME_FMT}}":    alarm_dt_fmt,
@@ -564,10 +672,15 @@ def _process_entity(
             print(f"    [WARN] events-файл не найден для {cusum_path.name}")
         return []
 
-    events_df = pd.read_csv(events_path, encoding="utf-8-sig")
+    try:
+        events_df = pd.read_csv(events_path, encoding="utf-8-sig")
+    except Exception:
+        if verbose:
+            print(f"    [WARN] events-файл пуст или повреждён: {events_path.name}")
+        return []
     if events_df.empty:
         if verbose:
-            print(f"    [WARN] events-файл пуст: {events_path.name}")
+            print(f"    [WARN] events-файл не содержит алармов: {events_path.name}")
         return []
 
     events_df["START_TIME"] = pd.to_datetime(events_df["START_TIME"], errors="coerce")

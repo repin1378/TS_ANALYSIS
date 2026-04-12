@@ -130,98 +130,105 @@ def _parse_start_time(series: pd.Series) -> pd.Series:
     return dt.dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
-_FREIGHT_COUNT_RE = re.compile(r"к\s*уч[её]ту\s*(\d+)", re.IGNORECASE)
-_FREIGHT_FIRST_COUNT_RE = re.compile(r"\b(\d+)\s*шт\b", re.IGNORECASE)
-_FREIGHT_TIME_RE = re.compile(r"(\d+(?:[\.,]\d+)?)\s*ч\b", re.IGNORECASE)
+# ── Регулярные выражения для разбора колонок с поездо-часами ──────────────────
+
+# "к учёту N" или "к учету N" — только целое число (не десятичное).
+# Negative lookahead (?![,.]) исключает форматы вида "к учету 0,32ч",
+# где "к учету" относится к таймауту, а не к счётчику поездов.
+_RE_COUNT_УЧЁТ = re.compile(r"к\s*уч[её]ту\s*(\d+)(?![,.\d])", re.IGNORECASE)
+# "N шт" (целое число перед «шт»)
+_RE_COUNT_ШТ   = re.compile(r"\b(\d+)\s*шт\b", re.IGNORECASE)
+# время: "1,18ч" / "0.67 ч" / "2 ч" / "11ч" — целые и дробные, с пробелом и без.
+# Также поддерживает формат с закрывающей скобкой перед «ч»:
+#   "0,1)ч" / "0,32)ч" — скобка между числом и «ч» игнорируется.
+_RE_TIMEOUT    = re.compile(r"(\d+(?:[.,]\d+)?)\s*\)?\s*ч\b", re.IGNORECASE)
 
 
-def _split_freight(series: pd.Series) -> tuple[pd.Series, pd.Series]:
-    """Разбивает FREIGHT на два поля:
-
-    - FREIGHT_COUNT: количество поездов
-      * если есть '(к учету N)' → берём N
-      * иначе берём первое число перед 'шт'
-
-    - FREIGHT_TIMEOUT: время простоя (например '0,67ч')
-      * берём последнее значение вида '<число>ч' из строки
-
-    На входе допускаются NaN.
+def _parse_one_train_cell(text: str) -> tuple[int | None, str | None]:
     """
+    Разбирает одну ячейку с показателями поезда.
 
-    def _one(val):
-        if pd.isna(val):
-            return None, None
-        text = str(val).strip()
-        if not text:
-            return None, None
+    Поддерживаемые форматы:
+        "2шт (к учёту 1) 0,67ч"   →  count=1,  timeout="0,67ч"
+        "3 шт 1,18 ч"              →  count=3,  timeout="1,18ч"
+        "5шт 2ч"                   →  count=5,  timeout="2ч"
+        "0,67ч"                    →  count=None, timeout="0,67ч"
+        ""  / NaN                  →  None, None
 
-        # COUNT
-        m = _FREIGHT_COUNT_RE.search(text)
-        if m:
-            count = m.group(1)
-        else:
-            m2 = _FREIGHT_FIRST_COUNT_RE.search(text)
-            count = m2.group(1) if m2 else None
+    Правила:
+        COUNT  — если есть "(к учёту N)" → берём N, иначе первое "Nшт"
+        TIMEOUT — последнее вхождение "<число>ч" (целое или дробное)
+    """
+    if not text or not text.strip():
+        return None, None
 
-        # TIMEOUT (last match)
-        times = _FREIGHT_TIME_RE.findall(text)
-        if times:
-            t = times[-1].replace(".", ",")  # приводим к запятой как в примере
-            timeout = f"{t}ч"
-        else:
-            timeout = None
+    # COUNT
+    m = _RE_COUNT_УЧЁТ.search(text)
+    if m:
+        count: int | None = int(m.group(1))
+    else:
+        m2 = _RE_COUNT_ШТ.search(text)
+        count = int(m2.group(1)) if m2 else None
 
-        return count, timeout
+    # TIMEOUT — берём последнее совпадение (наиболее актуальное)
+    hits = _RE_TIMEOUT.findall(text)
+    if hits:
+        raw = hits[-1].replace(".", ",")   # нормализуем разделитель к запятой
+        timeout: str | None = f"{raw}ч"
+    else:
+        timeout = None
 
-    out = series.apply(_one)
-    count_series = out.apply(lambda x: x[0])
-    timeout_series = out.apply(lambda x: x[1])
-    return count_series, timeout_series
+    return count, timeout
+
 
 def _split_train_metrics(series: pd.Series, prefix: str, df: pd.DataFrame) -> None:
     """
-    Разделяет колонку вида:
-    '2шт (к учету 1) 0,67ч'
-    '3шт 1,18ч'
+    Разделяет колонку PREFIX (FREIGHT / PASSENGER / COMMUTER) вида:
+        "2шт (к учёту 1) 0,67ч"
+        "3шт 1,18ч"
+        "5шт 2ч"
 
-    на:
-        PREFIX_COUNT
-        PREFIX_TIMEOUT
+    на две колонки:
+        PREFIX_COUNT    — количество поездов (int или None)
+        PREFIX_TIMEOUT  — время простоя в поездо-часах, строка "N,NNч" или None
     """
-
     count_col = f"{prefix}_COUNT"
-    time_col = f"{prefix}_TIMEOUT"
+    time_col  = f"{prefix}_TIMEOUT"
 
-    counts = []
-    times = []
+    counts: list = []
+    times:  list = []
+    unmatched_count = 0
 
     for val in series:
-
         if pd.isna(val):
             counts.append(None)
             times.append(None)
             continue
 
-        text = str(val)
+        text = str(val).strip()
+        if not text or text.lower() in ("nan", "none"):
+            counts.append(None)
+            times.append(None)
+            continue
 
-        # количество к учету
-        m = re.search(r"к уч[её]ту\s*(\d+)", text, re.IGNORECASE)
+        c, t = _parse_one_train_cell(text)
 
-        if m:
-            count = int(m.group(1))
-        else:
-            m = re.search(r"(\d+)\s*шт", text)
-            count = int(m.group(1)) if m else None
+        # Диагностика: ячейка непустая, но ничего не распознано
+        if c is None and t is None and text:
+            unmatched_count += 1
+            if unmatched_count <= 5:          # печатаем первые 5 проблемных значений
+                print(
+                    f"  [WARN] {prefix}: не удалось разобрать ячейку: {text!r}"
+                )
 
-        # время простоя
-        m = re.search(r"(\d+[.,]\d+)\s*ч", text)
-        timeout = f"{m.group(1)}ч" if m else None
+        counts.append(c)
+        times.append(t)
 
-        counts.append(count)
-        times.append(timeout)
+    if unmatched_count > 5:
+        print(f"  [WARN] {prefix}: всего не распознано ячеек: {unmatched_count}")
 
     df[count_col] = counts
-    df[time_col] = times
+    df[time_col]  = times
 
 
 def convert_xlsx_to_csv_keep_all_fields(input_dir: Path, output_dir: Path) -> None:

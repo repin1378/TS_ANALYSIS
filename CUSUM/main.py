@@ -6,7 +6,7 @@ from modules.filter_manager import create_filters, load_filtered_dataframe
 from modules.report_counter import generate_count_reports, generate_time_distribution_report
 from modules.data_loader import get_df_full_filter, get_df_multi_year
 from modules.preprocess import preprocess_dataframe, save_histogram, plot_cumulative_events, plot_cumulative_events_with_spike, plot_cumulative_events_with_cusum_alarms, plot_cusum_batch, estimate_ar1_for_directories
-from modules.seasonal_lambda import estimate_lambda_for_season
+from modules.seasonal_lambda import estimate_lambda_for_season, apply_lambda_from_reference_year
 from modules.synthetic_year_generator import generate_synthetic_year, generate_synthetic_year_with_spikes_smooth, generate_spike_report
 from modules.synthetic_enricher import enrich_synthetic_department_csvs, enrich_synthetic_road_csvs
 from modules.cusum_threshold import design_cusum_threshold_analytic, estimate_metrics_mc, compare_analytic_vs_mc_extended,save_comparison_to_csv,save_comparison_to_excel, find_h_from_delta_arl1, compute_arl0_from_delta_arl1, build_tables_h_delta_arl1, fit_new_approximations, run_arl0_delta_experiment, run_arl1_delta_experiment, run_arl1_target_delta_experiment, run_arl0_arl1_delta_experiment
@@ -23,10 +23,10 @@ def main():
     # output_dir = Path("KASANT/original/csv")
     # all_events_file = Path("KASANT/original/union/all_events.csv")
     # convert_xlsx_to_csv_keep_all_fields(input_dir, output_dir)
-    #
-    # # Сравнение структур CSV-файлов (проверка на одинаковые поля)
-    # compare_csv_structures(output_dir, strict_order=True)
-    #
+    # #
+    # # # Сравнение структур CSV-файлов (проверка на одинаковые поля)
+    # # compare_csv_structures(output_dir, strict_order=True)
+    # #
     # # Слияние всех CSV в один (для удобства анализа и создания фильтров)
     # merge_csv_files(output_dir, all_events_file)
 
@@ -59,7 +59,7 @@ def main():
     #     output_dir=Path("KASANT/data/filtered_by_department_year"),
     # )
 
-    # Создание полей для гистограммы и НЧС
+    # # Создание полей для гистограммы и НЧС
     # # 1. Обработка CSV
     # preprocess_dataframe(
     #     source_dirs=[
@@ -524,20 +524,20 @@ def main():
     #     spike_col="SPIKE_FLAG",     # флаг периода всплеска (опционально)
     # )
 
-    # ==== Сравнение исторических данных с результатами CUSUM — ДОРОГИ ======
-    # Для каждой дороги и каждого CUSUM-аларма:
-    #   - берёт период [начало_сезона → дата_аларма] в CUSUM-году
-    #   - сравнивает с аналогичным периодом в историческом году
-    #   - генерирует HTML-отчёт: out_dir/{Дорога}/alarm_NN_YYYY-MM-DD.html
-
-    compare_road_by_year(
-        historical_road_dir=Path("KASANT/processed/by_road_year"),
-        historical_year=2024,
-        cusum_road_dir=Path("KASANT/cusum_results/by_road_year"),
-        out_dir=Path("KASANT/cusum_results/compare/roads"),
-        top_n_reasons=10,
-        verbose=True,
-    )
+    # # ==== Сравнение исторических данных с результатами CUSUM — ДОРОГИ ======
+    # # Для каждой дороги и каждого CUSUM-аларма:
+    # #   - берёт период [начало_сезона → дата_аларма] в CUSUM-году
+    # #   - сравнивает с аналогичным периодом в историческом году
+    # #   - генерирует HTML-отчёт: out_dir/{Дорога}/alarm_NN_YYYY-MM-DD.html
+    #
+    # compare_road_by_year(
+    #     historical_road_dir=Path("KASANT/processed/by_road_year"),
+    #     historical_year=2024,
+    #     cusum_road_dir=Path("KASANT/cusum_results/by_road_year"),
+    #     out_dir=Path("KASANT/cusum_results/compare/roads"),
+    #     top_n_reasons=10,
+    #     verbose=True,
+    # )
 
     # # ==== Сравнение исторических данных с результатами CUSUM — ДЕПАРТАМЕНТЫ ======
     # # Отличие от дорог: в таблице «Изменение по ...» показывается ROAD, а не DEPARTMENT
@@ -550,7 +550,116 @@ def main():
     #     top_n_reasons=10,
     #     verbose=True,
     # )
+    #
+    # compare_department_by_year(
+    #     historical_dept_dir=Path("KASANT/processed/by_department_year/CSH"),
+    #     historical_year=2024,
+    #     cusum_dept_dir=Path("KASANT/cusum_results/by_department_year/CSH"),
+    #     out_dir=Path("KASANT/cusum_results/compare/departments/"),
+    #     top_n_reasons=10,
+    #     verbose=True,
+    # )
 
+    # # ==== Запуск CUSUM за 2024 год с λ₀ из 2023 ======
+    # #
+    # # Шаг 1. Оценить λ₀ по сезонам для 2023 (если ещё не сделано).
+    # #         Результат: KASANT/calculation/lambda_0/by_*_year/lambda_0_{entity}_2023.csv
+    # #
+    # estimate_lambda_for_season(
+    #     by_department_year_dir=Path("KASANT/processed/by_department_year"),
+    #     by_road_year_dir=Path("KASANT/processed/by_road_year"),
+    #     output_department_dir=Path("KASANT/calculation/lambda_0/by_department_year"),
+    #     output_road_dir=Path("KASANT/calculation/lambda_0/by_road_year"),
+    #     min_points=30,
+    #     ks_alpha=0.05,
+    # )
+
+    # # Шаг 2. Перенести λ₀ из 2023 на события 2024:
+    # #         - читает lambda_0/*_2023.csv из lambda_0/...
+    # #         - читает обработанные события из processed/.../2024/
+    # #         - добавляет колонки SEASON и LAMBDA0
+    # #         - сохраняет в calculation/lambda_0_2024/...
+    # #
+    # apply_lambda_from_reference_year(
+    #     reference_lambda_dept_dir=Path("KASANT/calculation/lambda_0/by_department_year"),
+    #     reference_lambda_road_dir=Path("KASANT/calculation/lambda_0/by_road_year"),
+    #     target_dept_dir=Path("KASANT/processed/by_department_year/2024"),
+    #     target_road_dir=Path("KASANT/processed/by_road_year/2024"),
+    #     output_dept_dir=Path("KASANT/calculation/lambda_0_2024/by_department_year"),
+    #     output_road_dir=Path("KASANT/calculation/lambda_0_2024/by_road_year"),
+    #     verbose=True,
+    # )
+
+    # # Шаг 3. Запуск CUSUM на событиях 2024 с λ₀ из 2023
+    # run_cusum_batch(
+    #     # ── параметры CUSUM ───────────────────────────────────────────────
+    #     delta_target=3.0,           # δ = λ₁/λ₀  (целевое отклонение)
+    #     window_size=30,             # окно для оценки λ̂ (число событий)
+    #     arl1_target=10,            # целевая задержка обнаружения (шаги)
+    #     # arl0_target=100.0,        # целевой ARL0 (ложные тревоги)
+    #     cooldown_after_alarm=30,    # шагов «молчания» после тревоги
+    #     # ── таблицы порогов h ─────────────────────────────────────────────
+    #     h_json_dir=Path("KASANT/cusum_optimization/dynamic_new"),
+    #     # ── входные папки с CSV (обогащённые SEASON + LAMBDA0) ───────────
+    #     roads_csv_dir=Path("KASANT/calculation/lambda_0_2024/by_road_year"),
+    #     departments_csv_dir=Path("KASANT/calculation/lambda_0_2024/by_department_year"),
+    #     # ── папки для результатов ─────────────────────────────────────────
+    #     roads_out_dir=Path("KASANT/cusum_results/2024/by_road_year"),
+    #     departments_out_dir=Path("KASANT/cusum_results/2024/by_department_year"),
+    #     # ── сводный CSV ───────────────────────────────────────────────────
+    #     summary_out_dir=Path("KASANT/cusum_results/2024"),
+    #     # ── вывод ─────────────────────────────────────────────────────────
+    #     verbose=True,
+    #     progress_every=0,           # 0 — не выводить прогресс внутри файлов
+    # )
+
+    # # ==== Построение CUSUM-графиков (батч: дороги + департаменты) ======
+    # plot_cusum_batch(
+    #     # ── папки с CUSUM-результатами (входные) ─────────────────────────
+    #     roads_cusum_dir=Path("KASANT/cusum_results/2024/by_road_year"),
+    #     departments_cusum_dir=Path("KASANT/cusum_results/2024/by_department_year"),
+    #     # ── папки для сохранения графиков (выходные) ─────────────────────
+    #     roads_graph_dir=Path("KASANT/cusum_results/2024/graphs/by_road_year"),
+    #     departments_graph_dir=Path("KASANT/cusum_results/2024/graphs/by_department_year"),
+    #     # ── колонки (по умолчанию, можно изменить) ───────────────────────
+    #     alarm_col="CUSUM_ALARM",    # флаг тревоги CUSUM
+    #     spike_col="SPIKE_FLAG",     # флаг периода всплеска (опционально)
+    # )
+
+    # ==== Сравнение исторических данных с результатами CUSUM — ДОРОГИ ======
+    # Для каждой дороги и каждого CUSUM-аларма:
+    #   - берёт период [начало_сезона → дата_аларма] в CUSUM-году
+    #   - сравнивает с аналогичным периодом в историческом году
+    #   - генерирует HTML-отчёт: out_dir/{Дорога}/alarm_NN_YYYY-MM-DD.html
+
+    compare_road_by_year(
+        historical_road_dir=Path("KASANT/processed/by_road_year"),
+        historical_year=2023,
+        cusum_road_dir=Path("KASANT/cusum_results/2024/by_road_year"),
+        out_dir=Path("KASANT/cusum_results/2024/compare/roads"),
+        top_n_reasons=10,
+        verbose=True,
+    )
+
+    # # ==== Сравнение исторических данных с результатами CUSUM — ДЕПАРТАМЕНТЫ ======
+    # # Отличие от дорог: в таблице «Изменение по ...» показывается ROAD, а не DEPARTMENT
+    # compare_department_by_year(
+    #     historical_dept_dir=Path("KASANT/processed/by_department_year"),
+    #     historical_year=2023,
+    #     cusum_dept_dir=Path("KASANT/cusum_results/2024/by_department_year"),
+    #     out_dir=Path("KASANT/cusum_results/2024/compare/departments"),
+    #     top_n_reasons=10,
+    #     verbose=True,
+    # )
+    #
+    # compare_department_by_year(
+    #     historical_dept_dir=Path("KASANT/processed/by_department_year/CSH"),
+    #     historical_year=2024,
+    #     cusum_dept_dir=Path("KASANT/cusum_results/by_department_year/CSH"),
+    #     out_dir=Path("KASANT/cusum_results/compare/departments/"),
+    #     top_n_reasons=10,
+    #     verbose=True,
+    # )
 
 if __name__ == "__main__":
     main()

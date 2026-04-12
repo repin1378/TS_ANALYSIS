@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Отчёт о срабатывании CUSUM — ЦВ</title>
+  <style>
+    /* ── Базовые стили ──────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Segoe UI", Arial, sans-serif;
+      font-size: 14px;
+      background: #f0f2f5;
+      color: #1a1a2e;
+    }
+
+    /* ── Шапка ──────────────────────────────────────────────── */
+    .header {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%);
+      color: #fff;
+      padding: 28px 40px 24px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .header-icon {
+      font-size: 40px;
+      line-height: 1;
+    }
+    .header-text h1 {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+    }
+    .header-text p {
+      margin-top: 4px;
+      font-size: 13px;
+      color: #a8b2d8;
+    }
+    .alarm-badge {
+      margin-left: auto;
+      background: #e94560;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 6px 16px;
+      border-radius: 20px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    /* ── Контейнер ──────────────────────────────────────────── */
+    .container {
+      max-width: 1100px;
+      margin: 32px auto;
+      padding: 0 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* ── Карточки ───────────────────────────────────────────── */
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.07);
+      overflow: hidden;
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 16px 24px;
+      border-bottom: 1px solid #eef0f5;
+      font-size: 15px;
+      font-weight: 700;
+      color: #1a1a2e;
+    }
+    .card-header .icon {
+      font-size: 18px;
+    }
+    .card-body { padding: 20px 24px; }
+
+    /* ── Сводная информация ─────────────────────────────────── */
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+    }
+    .meta-item label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #7b8ab8;
+      margin-bottom: 4px;
+    }
+    .meta-item span {
+      font-size: 15px;
+      font-weight: 600;
+      color: #1a1a2e;
+    }
+
+    /* ── KPI-плитки ─────────────────────────────────────────── */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+    }
+    .kpi {
+      border-radius: 10px;
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .kpi.neutral  { background: #f0f4ff; border-left: 4px solid #4361ee; }
+    .kpi.danger   { background: #fff1f3; border-left: 4px solid #e94560; }
+    .kpi.success  { background: #f0faf4; border-left: 4px solid #2dc653; }
+
+    .kpi .kpi-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #7b8ab8;
+    }
+    .kpi .kpi-value {
+      font-size: 28px;
+      font-weight: 800;
+      line-height: 1;
+    }
+    .kpi.neutral  .kpi-value { color: #4361ee; }
+    .kpi.danger   .kpi-value { color: #e94560; }
+    .kpi.success  .kpi-value { color: #2dc653; }
+    .kpi .kpi-sub {
+      font-size: 12px;
+      color: #7b8ab8;
+    }
+
+    /* ── Таблицы сравнения ──────────────────────────────────── */
+    .table-wrap { overflow-x: auto; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13.5px;
+    }
+    thead tr {
+      background: #f5f7fb;
+    }
+    thead th {
+      padding: 11px 14px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      color: #7b8ab8;
+      border-bottom: 2px solid #eef0f5;
+    }
+    thead th.num { text-align: center; }
+    tbody tr { border-bottom: 1px solid #f0f2f5; transition: background .15s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: #fafbff; }
+    tbody td { padding: 10px 14px; vertical-align: middle; }
+    tbody td.num {
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Бейдж % изменения */
+    .pct {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      font-weight: 700;
+      font-size: 13px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      white-space: nowrap;
+    }
+    .pct.up   { background: #fff1f3; color: #e94560; }
+    .pct.down { background: #f0faf4; color: #2dc653; }
+    .pct.zero { background: #f5f7fb; color: #7b8ab8; }
+
+    /* Мини-бар прогресса */
+    .bar-cell { min-width: 160px; text-align: left; }
+    .bar-wrap { display: flex; align-items: center; gap: 8px; }
+    .bar-bg {
+      flex: 1;
+      height: 6px;
+      background: #eef0f5;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .bar-fill { height: 100%; border-radius: 3px; }
+    .bar-fill.curr { background: #4361ee; }
+    .bar-fill.prev { background: #a8b2d8; }
+    .bar-num { font-size: 12px; color: #7b8ab8; min-width: 34px; text-align: right; }
+
+    /* ── Простои ────────────────────────────────────────────── */
+    .downtime-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+    .dt-card {
+      border-radius: 10px;
+      border: 1px solid #eef0f5;
+      padding: 18px;
+    }
+    .dt-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #7b8ab8;
+      margin-bottom: 12px;
+    }
+    .dt-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+    .dt-row .dt-year { color: #7b8ab8; font-size: 12px; }
+    .dt-row .dt-val  { font-weight: 700; font-size: 15px; color: #1a1a2e; }
+    .dt-divider { height: 1px; background: #f0f2f5; margin: 10px 0; }
+    .dt-change {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .dt-change .label { color: #7b8ab8; }
+    .dt-change .val-up   { color: #e94560; font-weight: 800; }
+    .dt-change .val-down { color: #2dc653; font-weight: 800; }
+    .dt-change .val-zero { color: #7b8ab8; font-weight: 800; }
+
+    /* ── Подвал ─────────────────────────────────────────────── */
+    .footer {
+      text-align: center;
+      font-size: 11.5px;
+      color: #a8b2d8;
+      padding: 16px 0 32px;
+    }
+
+    @media (max-width: 680px) {
+      .downtime-grid { grid-template-columns: 1fr; }
+      .header { flex-wrap: wrap; }
+      .alarm-badge { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════ ШАПКА ══ -->
+<div class="header">
+  <div class="header-icon">📊</div>
+  <div class="header-text">
+    <h1>ЦВ</h1>
+    <p>Подразделение: ЦВ · Сезон: Осень</p>
+  </div>
+  <div class="alarm-badge">⚠ ALARM №12</div>
+</div>
+
+<div class="container">
+
+  <!-- ══════════════════════════════════ СВОДНАЯ ИНФОРМАЦИЯ ══ -->
+  <div class="card">
+    <div class="card-header"><span class="icon">ℹ</span> Параметры события</div>
+    <div class="card-body">
+      <div class="meta-grid">
+        <div class="meta-item">
+          <label>Дата и время события</label>
+          <span>13.10.2025&nbsp;23:23:53</span>
+        </div>
+        <div class="meta-item">
+          <label>Сезон</label>
+          <span>Осень</span>
+        </div>
+        <div class="meta-item">
+          <label>Начало сезона (тек. год)</label>
+          <span>01.09.2025</span>
+        </div>
+        <div class="meta-item">
+          <label>Аналогичная дата (пред. год)</label>
+          <span>13.10.2024</span>
+        </div>
+        <div class="meta-item">
+          <label>Начало сезона (пред. год)</label>
+          <span>01.09.2024</span>
+        </div>
+        <div class="meta-item">
+          <label>delta (оценка разладки)</label>
+          <span>2.16 &nbsp;<span style="color:#e94560;font-size:12px">▲ рост интенсивности</span></span>
+        </div>
+        <div class="meta-item">
+          <label>CUSUM в момент события</label>
+          <span>3.35</span>
+        </div>
+        <div class="meta-item">
+          <label>Порог h</label>
+          <span>3.10</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════ KPI-ПЛИТКИ ══ -->
+  <div class="kpi-row">
+    <div class="kpi neutral">
+      <div class="kpi-label">Событий в тек. периоде</div>
+      <div class="kpi-value">153</div>
+      <div class="kpi-sub">01.09 – 13.10.2025</div>
+    </div>
+    <div class="kpi neutral">
+      <div class="kpi-label">Событий в пред. периоде</div>
+      <div class="kpi-value">135</div>
+      <div class="kpi-sub">01.09 – 13.10.2024</div>
+    </div>
+    <div class="kpi danger">
+      <div class="kpi-label">Общее изменение</div>
+      <div class="kpi-value">+13.3%</div>
+      <div class="kpi-sub">153 vs 135 событий</div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════ ПО КАТЕГОРИЯМ ══ -->
+  <div class="card">
+    <div class="card-header"><span class="icon">🏷</span> Изменение по категориям</div>
+    <div class="card-body">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Категория</th>
+              <th class="num">2025</th>
+              <th class="num">2024</th>
+              <th class="bar-cell">Доля влияния фактора в текущем году</th>
+              <th class="num">Изменение</th>
+            </tr>
+          </thead>
+          <tbody>
+                        <tr>
+              <td><strong>1</strong></td>
+              <td class="num">59</td>
+              <td class="num">14</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:100%"></div></div>
+                  <span class="bar-num">39%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ +321.4%</span></td>
+            </tr>
+            <tr>
+              <td><strong>2</strong></td>
+              <td class="num">38</td>
+              <td class="num">47</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:64%"></div></div>
+                  <span class="bar-num">25%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct down">▼ −19.1%</span></td>
+            </tr>
+            <tr>
+              <td><strong>3</strong></td>
+              <td class="num">56</td>
+              <td class="num">74</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:95%"></div></div>
+                  <span class="bar-num">37%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct down">▼ −24.3%</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════ ПО ПРИЧИНАМ ══ -->
+  <div class="card">
+    <div class="card-header"><span class="icon">🔍</span> Изменение по причинам</div>
+    <div class="card-body">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Причина</th>
+              <th class="num">2025</th>
+              <th class="num">2024</th>
+              <th class="bar-cell">Доля влияния фактора</th>
+              <th class="num">Изменение</th>
+            </tr>
+          </thead>
+          <tbody>
+                        <tr>
+              <td>Неравномерный прокат по кругу катания колеса грузового вагона выше нормы</td>
+              <td class="num">17</td>
+              <td class="num">0</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:27%"></div></div>
+                  <span class="bar-num">11%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ новый фактор</span></td>
+            </tr>
+            <tr>
+              <td>Шелушение, раковины, коррозия на деталях подшипника</td>
+              <td class="num">5</td>
+              <td class="num">0</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:8%"></div></div>
+                  <span class="bar-num">3%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ новый фактор</span></td>
+            </tr>
+            <tr>
+              <td>Неисправность магистральной части воздухораспределителя</td>
+              <td class="num">4</td>
+              <td class="num">0</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:6%"></div></div>
+                  <span class="bar-num">3%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ новый фактор</span></td>
+            </tr>
+            <tr>
+              <td>Неисправность воздухораспределителя грузового вагона</td>
+              <td class="num">3</td>
+              <td class="num">0</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:5%"></div></div>
+                  <span class="bar-num">2%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ новый фактор</span></td>
+            </tr>
+            <tr>
+              <td>Выщербина на ободе колеса грузового вагона</td>
+              <td class="num">20</td>
+              <td class="num">2</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:32%"></div></div>
+                  <span class="bar-num">13%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ +900.0%</span></td>
+            </tr>
+            <tr>
+              <td>Технологический нагрев буксового узла</td>
+              <td class="num">8</td>
+              <td class="num">2</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:13%"></div></div>
+                  <span class="bar-num">5%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ +300.0%</span></td>
+            </tr>
+            <tr>
+              <td>Ослабление (разрушение) торцевого крепления</td>
+              <td class="num">6</td>
+              <td class="num">3</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:10%"></div></div>
+                  <span class="bar-num">4%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ +100.0%</span></td>
+            </tr>
+            <tr>
+              <td>Тонкий гребень колеса грузового вагона</td>
+              <td class="num">63</td>
+              <td class="num">48</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:100%"></div></div>
+                  <span class="bar-num">41%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ +31.2%</span></td>
+            </tr>
+            <tr>
+              <td>Излом рычагов и тормозных тяг грузового вагона</td>
+              <td class="num">0</td>
+              <td class="num">4</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:0%"></div></div>
+                  <span class="bar-num">0%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct down">▼ −100.0%</span></td>
+            </tr>
+            <tr>
+              <td>Шелушение, раковины, коррозия на  деталях подшипника</td>
+              <td class="num">0</td>
+              <td class="num">4</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:0%"></div></div>
+                  <span class="bar-num">0%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct down">▼ −100.0%</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════ ПО ДОРОГАМ ══ -->
+  <div class="card">
+    <div class="card-header"><span class="icon">🛤</span> Изменение по дорогам</div>
+    <div class="card-body">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Дорога</th>
+              <th class="num">2025</th>
+              <th class="num">2024</th>
+              <th class="bar-cell">Доля влияния фактора</th>
+              <th class="num">Изменение</th>
+            </tr>
+          </thead>
+          <tbody>
+                        <tr>
+              <td>Куйбышевская</td>
+              <td class="num">5</td>
+              <td class="num">1</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:12%"></div></div>
+                  <span class="bar-num">3%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ +400.0%</span></td>
+            </tr>
+            <tr>
+              <td>Северная</td>
+              <td class="num">7</td>
+              <td class="num">2</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:17%"></div></div>
+                  <span class="bar-num">5%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ +250.0%</span></td>
+            </tr>
+            <tr>
+              <td>Восточно-Сибирская</td>
+              <td class="num">42</td>
+              <td class="num">20</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:100%"></div></div>
+                  <span class="bar-num">27%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ +110.0%</span></td>
+            </tr>
+            <tr>
+              <td>Дальневосточная</td>
+              <td class="num">11</td>
+              <td class="num">8</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:26%"></div></div>
+                  <span class="bar-num">7%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ +37.5%</span></td>
+            </tr>
+            <tr>
+              <td>Западно-Сибирская</td>
+              <td class="num">15</td>
+              <td class="num">12</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:36%"></div></div>
+                  <span class="bar-num">10%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ +25.0%</span></td>
+            </tr>
+            <tr>
+              <td>Забайкальская</td>
+              <td class="num">28</td>
+              <td class="num">24</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:67%"></div></div>
+                  <span class="bar-num">18%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ +16.7%</span></td>
+            </tr>
+            <tr>
+              <td>Красноярская</td>
+              <td class="num">19</td>
+              <td class="num">17</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:45%"></div></div>
+                  <span class="bar-num">12%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ +11.8%</span></td>
+            </tr>
+            <tr>
+              <td>Свердловская</td>
+              <td class="num">9</td>
+              <td class="num">10</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:21%"></div></div>
+                  <span class="bar-num">6%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct down">▼ −10.0%</span></td>
+            </tr>
+            <tr>
+              <td>Октябрьская</td>
+              <td class="num">10</td>
+              <td class="num">13</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:24%"></div></div>
+                  <span class="bar-num">7%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct down">▼ −23.1%</span></td>
+            </tr>
+            <tr>
+              <td>Южно-Уральская</td>
+              <td class="num">7</td>
+              <td class="num">22</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:17%"></div></div>
+                  <span class="bar-num">5%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct down">▼ −68.2%</span></td>
+            </tr>
+            <tr>
+              <td>Московская</td>
+              <td class="num">0</td>
+              <td class="num">4</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:0%"></div></div>
+                  <span class="bar-num">0%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct down">▼ −100.0%</span></td>
+            </tr>
+            <tr>
+              <td>Юго-Восточная</td>
+              <td class="num">0</td>
+              <td class="num">2</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:0%"></div></div>
+                  <span class="bar-num">0%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct down">▼ −100.0%</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════ ПО ОТВЕТСТВЕННЫМ ══ -->
+  <div class="card">
+    <div class="card-header"><span class="icon">👤</span> Изменение по ответственным</div>
+    <div class="card-body">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Ответственный</th>
+              <th class="num">2025</th>
+              <th class="num">2024</th>
+              <th class="bar-cell">Доля влияния фактора</th>
+              <th class="num">Изменение</th>
+            </tr>
+          </thead>
+          <tbody>
+                        <tr>
+              <td>В-СИБ, ВЧДЭ-13 ТАЙШЕТ</td>
+              <td class="num">11</td>
+              <td class="num">3</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:34%"></div></div>
+                  <span class="bar-num">7%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ +266.7%</span></td>
+            </tr>
+            <tr>
+              <td>КРАС, ВЧДЭ-8 АБАКАН</td>
+              <td class="num">12</td>
+              <td class="num">5</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:38%"></div></div>
+                  <span class="bar-num">8%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ +140.0%</span></td>
+            </tr>
+            <tr>
+              <td>ЗАБ, ВЧДЭ-7 БЕЛОГОРСК</td>
+              <td class="num">12</td>
+              <td class="num">6</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:38%"></div></div>
+                  <span class="bar-num">8%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ +100.0%</span></td>
+            </tr>
+            <tr>
+              <td>КРАС, ВЧДЭ-7 КРАСНОЯРСК-ВОСТ</td>
+              <td class="num">32</td>
+              <td class="num">18</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:100%"></div></div>
+                  <span class="bar-num">21%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ +77.8%</span></td>
+            </tr>
+            <tr>
+              <td>З-СИБ, ВЧДЭ-25 НОВОКУЗНЕЦК</td>
+              <td class="num">7</td>
+              <td class="num">4</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:22%"></div></div>
+                  <span class="bar-num">5%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ +75.0%</span></td>
+            </tr>
+            <tr>
+              <td>В-СИБ, ВЧДЭ-10 УЛАН-УДЭ</td>
+              <td class="num">8</td>
+              <td class="num">5</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:25%"></div></div>
+                  <span class="bar-num">5%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ +60.0%</span></td>
+            </tr>
+            <tr>
+              <td>СВЕРД, ВЧДЭ-4</td>
+              <td class="num">14</td>
+              <td class="num">10</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:44%"></div></div>
+                  <span class="bar-num">9%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ +40.0%</span></td>
+            </tr>
+            <tr>
+              <td>З-СИБ, ВЧДЭ-23 БЕЛОВО</td>
+              <td class="num">4</td>
+              <td class="num">3</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:12%"></div></div>
+                  <span class="bar-num">3%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ +33.3%</span></td>
+            </tr>
+            <tr>
+              <td>КРАС, ВЧДЭ-1 БОГОТОЛ</td>
+              <td class="num">9</td>
+              <td class="num">7</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:28%"></div></div>
+                  <span class="bar-num">6%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ +28.6%</span></td>
+            </tr>
+            <tr>
+              <td>З-СИБ, ВЧДЭ-6 ИНСКАЯ</td>
+              <td class="num">6</td>
+              <td class="num">5</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:19%"></div></div>
+                  <span class="bar-num">4%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ +20.0%</span></td>
+            </tr>
+            <tr>
+              <td>ЗАБ, ВЧДЭ-3 КАРЫМСКАЯ</td>
+              <td class="num">21</td>
+              <td class="num">18</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:66%"></div></div>
+                  <span class="bar-num">14%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ +16.7%</span></td>
+            </tr>
+            <tr>
+              <td>Д-ВОСТ, ВЧДЭ-1 ХАБАРОВСК</td>
+              <td class="num">9</td>
+              <td class="num">8</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:28%"></div></div>
+                  <span class="bar-num">6%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct up">▲ +12.5%</span></td>
+            </tr>
+            <tr>
+              <td>З-СИБ, ВЧДЭ-12 ВХОДНАЯ</td>
+              <td class="num">1</td>
+              <td class="num">1</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:3%"></div></div>
+                  <span class="bar-num">1%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct zero">→ 0.0%</span></td>
+            </tr>
+            <tr>
+              <td>ОКТ, ВЧДЭ-28 ВОЛХОВСТРОЙ</td>
+              <td class="num">5</td>
+              <td class="num">5</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:16%"></div></div>
+                  <span class="bar-num">3%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct zero">→ 0.0%</span></td>
+            </tr>
+            <tr>
+              <td>Ю-УР, ВЧДЭ-1 ЧЕЛЯБИНСК</td>
+              <td class="num">2</td>
+              <td class="num">4</td>
+              <td class="bar-cell">
+                <div class="bar-wrap">
+                  <div class="bar-bg"><div class="bar-fill curr" style="width:6%"></div></div>
+                  <span class="bar-num">1%</span>
+                </div>
+              </td>
+              <td class="num"><span class="pct down">▼ −50.0%</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════ ПРОСТОИ ══ -->
+  <div class="card">
+    <div class="card-header"><span class="icon">⏱</span> Изменение суммарных простоев (поездо-часы)</div>
+    <div class="card-body">
+      <div class="downtime-grid">
+                <div class="dt-card">
+          <div class="dt-title">🚂 Грузовые перевозки</div>
+          <div class="dt-row">
+            <span class="dt-year">2025</span>
+            <span class="dt-val">31 566.8 поездо-ч</span>
+          </div>
+          <div class="dt-row">
+            <span class="dt-year">2024</span>
+            <span class="dt-val">474 поездо-ч</span>
+          </div>
+          <div class="dt-divider"></div>
+          <div class="dt-change">
+            <span class="label">Изменение</span>
+            <span class="val-up">▲ +6560.2%</span>
+          </div>
+        </div>
+                <div class="dt-card">
+          <div class="dt-title">🚆 Пассажирские перевозки</div>
+          <div class="dt-row">
+            <span class="dt-year">2025</span>
+            <span class="dt-val">2 097.5 поездо-ч</span>
+          </div>
+          <div class="dt-row">
+            <span class="dt-year">2024</span>
+            <span class="dt-val">2.4 поездо-ч</span>
+          </div>
+          <div class="dt-divider"></div>
+          <div class="dt-change">
+            <span class="label">Изменение</span>
+            <span class="val-up">▲ +88029.0%</span>
+          </div>
+        </div>
+                <div class="dt-card">
+          <div class="dt-title">🚋 Пригородные перевозки</div>
+          <div class="dt-row">
+            <span class="dt-year">2025</span>
+            <span class="dt-val">3 390.3 поездо-ч</span>
+          </div>
+          <div class="dt-row">
+            <span class="dt-year">2024</span>
+            <span class="dt-val">0.3 поездо-ч</span>
+          </div>
+          <div class="dt-divider"></div>
+          <div class="dt-change">
+            <span class="label">Изменение</span>
+            <span class="val-up">▲ +1210717.9%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<div class="footer">
+  Сгенерировано автоматически · CUSUM Alarm Report · ЦВ · 13.10.2025 23:23:53
+</div>
+
+</body>
+</html>

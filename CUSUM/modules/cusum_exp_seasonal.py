@@ -319,7 +319,14 @@ def run_cusum_exp_from_csv(
     # ========================================================
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    df_events = pd.DataFrame(events)
+    _EVENTS_COLS = [
+        "INDEX", "START_TIME", "SEASON", "LAMBDA0",
+        "LAMBDA_HAT", "DELTA_HAT", "CUSUM_S", "H", "COOLDOWN", "IN_SPIKE_PERIOD",
+    ]
+    if events:
+        df_events = pd.DataFrame(events)
+    else:
+        df_events = pd.DataFrame(columns=_EVENTS_COLS)
     events_path = out_dir / f"{stem}_cusum_events.csv"
     df_events.to_csv(events_path, index=False, encoding="utf-8-sig")
 
