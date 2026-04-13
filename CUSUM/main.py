@@ -5,7 +5,7 @@ from modules.cusum_exp_seasonal import run_cusum_exp_from_csv, run_cusum_batch
 from modules.filter_manager import create_filters, load_filtered_dataframe
 from modules.report_counter import generate_count_reports, generate_time_distribution_report
 from modules.data_loader import get_df_full_filter, get_df_multi_year
-from modules.preprocess import preprocess_dataframe, save_histogram, plot_cumulative_events, plot_cumulative_events_with_spike, plot_cumulative_events_with_cusum_alarms, plot_cusum_batch, estimate_ar1_for_directories
+from modules.preprocess import preprocess_dataframe, save_histogram, plot_cumulative_events, plot_cumulative_events_with_spike, plot_cumulative_events_with_cusum_alarms, plot_cusum_batch, plot_cusum_batch_html, estimate_ar1_for_directories
 from modules.seasonal_lambda import estimate_lambda_for_season, apply_lambda_from_reference_year
 from modules.synthetic_year_generator import generate_synthetic_year, generate_synthetic_year_with_spikes_smooth, generate_spike_report
 from modules.synthetic_enricher import enrich_synthetic_department_csvs, enrich_synthetic_road_csvs
@@ -613,33 +613,40 @@ def main():
     #     progress_every=0,           # 0 — не выводить прогресс внутри файлов
     # )
 
-    # # ==== Построение CUSUM-графиков (батч: дороги + департаменты) ======
+    # # ==== Построение CUSUM-графиков PDF (батч: дороги + департаменты) ======
     # plot_cusum_batch(
-    #     # ── папки с CUSUM-результатами (входные) ─────────────────────────
     #     roads_cusum_dir=Path("KASANT/cusum_results/2024/by_road_year"),
     #     departments_cusum_dir=Path("KASANT/cusum_results/2024/by_department_year"),
-    #     # ── папки для сохранения графиков (выходные) ─────────────────────
     #     roads_graph_dir=Path("KASANT/cusum_results/2024/graphs/by_road_year"),
     #     departments_graph_dir=Path("KASANT/cusum_results/2024/graphs/by_department_year"),
-    #     # ── колонки (по умолчанию, можно изменить) ───────────────────────
-    #     alarm_col="CUSUM_ALARM",    # флаг тревоги CUSUM
-    #     spike_col="SPIKE_FLAG",     # флаг периода всплеска (опционально)
+    #     alarm_col="CUSUM_ALARM",
+    #     spike_col="SPIKE_FLAG",
     # )
 
-    # ==== Сравнение исторических данных с результатами CUSUM — ДОРОГИ ======
-    # Для каждой дороги и каждого CUSUM-аларма:
-    #   - берёт период [начало_сезона → дата_аларма] в CUSUM-году
-    #   - сравнивает с аналогичным периодом в историческом году
-    #   - генерирует HTML-отчёт: out_dir/{Дорога}/alarm_NN_YYYY-MM-DD.html
-
-    compare_road_by_year(
-        historical_road_dir=Path("KASANT/processed/by_road_year"),
-        historical_year=2023,
-        cusum_road_dir=Path("KASANT/cusum_results/2024/by_road_year"),
-        out_dir=Path("KASANT/cusum_results/2024/compare/roads"),
-        top_n_reasons=10,
-        verbose=True,
+    # ==== Построение интерактивных CUSUM-графиков HTML (батч) ======
+    plot_cusum_batch_html(
+        roads_cusum_dir=Path("KASANT/cusum_results/2024/by_road_year"),
+        departments_cusum_dir=Path("KASANT/cusum_results/2024/by_department_year"),
+        roads_graph_dir=Path("KASANT/cusum_results/2024/graphs_html/by_road_year"),
+        departments_graph_dir=Path("KASANT/cusum_results/2024/graphs_html/by_department_year"),
+        alarm_col="CUSUM_ALARM",
+        spike_col="SPIKE_FLAG",
     )
+
+    # # ==== Сравнение исторических данных с результатами CUSUM — ДОРОГИ ======
+    # # Для каждой дороги и каждого CUSUM-аларма:
+    # #   - берёт период [начало_сезона → дата_аларма] в CUSUM-году
+    # #   - сравнивает с аналогичным периодом в историческом году
+    # #   - генерирует HTML-отчёт: out_dir/{Дорога}/alarm_NN_YYYY-MM-DD.html
+    #
+    # compare_road_by_year(
+    #     historical_road_dir=Path("KASANT/processed/by_road_year"),
+    #     historical_year=2023,
+    #     cusum_road_dir=Path("KASANT/cusum_results/2024/by_road_year"),
+    #     out_dir=Path("KASANT/cusum_results/2024/compare/roads"),
+    #     top_n_reasons=10,
+    #     verbose=True,
+    # )
 
     # # ==== Сравнение исторических данных с результатами CUSUM — ДЕПАРТАМЕНТЫ ======
     # # Отличие от дорог: в таблице «Изменение по ...» показывается ROAD, а не DEPARTMENT

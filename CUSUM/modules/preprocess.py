@@ -828,6 +828,312 @@ def plot_cusum_batch(
     return summary
 
 
+def plot_cusum_batch_html(
+    *,
+    roads_cusum_dir: Path | None = None,
+    departments_cusum_dir: Path | None = None,
+    roads_graph_dir: Path | None = None,
+    departments_graph_dir: Path | None = None,
+    alarm_col: str = "CUSUM_ALARM",
+    spike_col: str = "SPIKE_FLAG",
+) -> list[dict]:
+    """
+    Батч-построение интерактивных HTML-графиков CUSUM (Plotly).
+
+    Для каждого CUSUM-файла создаёт HTML с возможностью:
+        • зума колесом мыши / выделением области
+        • пана зажатым ЛКМ
+        • тултипов: дата, индекс, сезон, δ̂
+        • двойной клик — сброс масштаба
+
+    Состав графика:
+        Верхняя панель  — кривая НЧС (INDEX), зоны всплесков, алармы ▼
+        Нижняя панель   — статистика CUSUM S + порог H (если есть колонка CUSUM_S)
+
+    Параметры
+    ---------
+    roads_cusum_dir       : папка с CUSUM-результатами по дорогам (None — пропустить)
+    departments_cusum_dir : папка с CUSUM-результатами по департаментам (None — пропустить)
+    roads_graph_dir       : папка для HTML-графиков дорог
+    departments_graph_dir : папка для HTML-графиков департаментов
+    alarm_col             : колонка флага тревоги (CUSUM_ALARM)
+    spike_col             : колонка периода всплеска (SPIKE_FLAG)
+
+    Возвращает
+    ----------
+    list[dict] — сводная таблица: source, csv_name, stem, graph_path, alarm_count, error
+    """
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+
+    def _build_html(df: pd.DataFrame, stem: str, alarm_col: str, spike_col: str) -> go.Figure:
+        df = df.copy()
+        df["START_TIME"] = pd.to_datetime(df["START_TIME"], errors="coerce")
+        df = df[df["START_TIME"].notna()].sort_values("START_TIME").reset_index(drop=True)
+
+        has_spike   = spike_col in df.columns
+        has_cusum_s = "CUSUM_S" in df.columns
+        has_h       = "H" in df.columns
+        has_season  = "SEASON" in df.columns
+        has_delta   = "DELTA_HAT" in df.columns
+
+        alarm_mask = pd.to_numeric(df[alarm_col], errors="coerce").fillna(0) > 0
+        alarm_df   = df[alarm_mask].copy()
+        n_alarms   = int(alarm_mask.sum())
+
+        n_rows  = 2 if has_cusum_s else 1
+        row_h   = [0.68, 0.32] if has_cusum_s else [1.0]
+        s_titles = [stem, "CUSUM статистика S"] if has_cusum_s else [stem]
+
+        fig = make_subplots(
+            rows=n_rows, cols=1,
+            shared_xaxes=True,
+            row_heights=row_h,
+            subplot_titles=s_titles,
+            vertical_spacing=0.06,
+        )
+
+        times = df["START_TIME"]
+        index = df["INDEX"]
+
+        # ── 1. Кривая НЧС ────────────────────────────────────────────────────
+        ht_main = (
+            "<b>%{x|%d.%m.%Y %H:%M}</b><br>Индекс: %{y:.4f}<br>"
+            + ("Сезон: %{customdata}<extra></extra>" if has_season
+               else "<extra></extra>")
+        )
+        fig.add_trace(go.Scatter(
+            x=times, y=index,
+            mode="lines",
+            name="НЧС (INDEX)",
+            line=dict(color="black", width=2),
+            hovertemplate=ht_main,
+            customdata=df["SEASON"].values if has_season else None,
+        ), row=1, col=1)
+
+        # ── 2. Периоды всплесков ──────────────────────────────────────────────
+        if has_spike:
+            spike_vals = pd.to_numeric(df[spike_col], errors="coerce").fillna(0).values
+            in_seg, seg_start, first = False, None, True
+            for k in range(len(spike_vals)):
+                if spike_vals[k] > 0 and not in_seg:
+                    in_seg, seg_start = True, times.iloc[k]
+                if spike_vals[k] == 0 and in_seg:
+                    fig.add_vrect(
+                        x0=seg_start, x1=times.iloc[k - 1],
+                        fillcolor="red", opacity=0.12,
+                        layer="below", line_width=0,
+                        name="Период всплеска" if first else None,
+                        showlegend=first,
+                    )
+                    in_seg, first = False, False
+            if in_seg:
+                fig.add_vrect(
+                    x0=seg_start, x1=times.iloc[-1],
+                    fillcolor="red", opacity=0.12,
+                    layer="below", line_width=0,
+                    name="Период всплеска" if first else None,
+                    showlegend=first,
+                )
+
+        # ── 3. Алармы ─────────────────────────────────────────────────────────
+        if n_alarms > 0:
+            alarm_y = np.interp(
+                alarm_df["START_TIME"].values.astype(np.int64),
+                times.values.astype(np.int64),
+                index.values,
+            )
+
+            # Тултип для маркеров
+            cd_cols = []
+            if has_season and "SEASON" in alarm_df.columns:
+                cd_cols.append(alarm_df["SEASON"].values)
+            if has_delta and "DELTA_HAT" in alarm_df.columns:
+                cd_cols.append(alarm_df["DELTA_HAT"].round(3).values)
+            alarm_cd = np.column_stack(cd_cols) if cd_cols else None
+
+            ht_alarm = "<b>⚠ CUSUM-аларм</b><br>%{x|%d.%m.%Y %H:%M}<br>"
+            ci = 0
+            if has_season and "SEASON" in alarm_df.columns:
+                ht_alarm += f"Сезон: %{{customdata[{ci}]}}<br>"; ci += 1
+            if has_delta and "DELTA_HAT" in alarm_df.columns:
+                ht_alarm += f"δ̂ = %{{customdata[{ci}]:.2f}}<br>"
+            ht_alarm += "<extra></extra>"
+
+            if alarm_cd is None:
+                ht_alarm = "<b>⚠ CUSUM-аларм</b><br>%{x|%d.%m.%Y %H:%M}<extra></extra>"
+
+            fig.add_trace(go.Scatter(
+                x=alarm_df["START_TIME"], y=alarm_y,
+                mode="markers",
+                name=f"CUSUM-аларм ({n_alarms})",
+                marker=dict(symbol="triangle-down", size=12,
+                            color="red", line=dict(color="darkred", width=1)),
+                hovertemplate=ht_alarm,
+                customdata=alarm_cd,
+            ), row=1, col=1)
+
+            for t_alarm in alarm_df["START_TIME"]:
+                fig.add_vline(
+                    x=t_alarm,
+                    line=dict(color="red", width=1.4, dash="dash"),
+                )
+
+        # ── 4. CUSUM-статистика S ─────────────────────────────────────────────
+        if has_cusum_s:
+            cusum_s = pd.to_numeric(df["CUSUM_S"], errors="coerce").fillna(0)
+            fig.add_trace(go.Scatter(
+                x=times, y=cusum_s,
+                mode="lines",
+                name="CUSUM S",
+                line=dict(color="darkorange", width=1.5),
+                fill="tozeroy",
+                fillcolor="rgba(255,140,0,0.13)",
+                hovertemplate="<b>%{x|%d.%m.%Y %H:%M}</b><br>S = %{y:.3f}<extra></extra>",
+            ), row=2, col=1)
+
+            if has_h:
+                h_med = float(pd.to_numeric(df["H"], errors="coerce").median())
+                if np.isfinite(h_med) and h_med > 0:
+                    fig.add_hline(
+                        y=h_med,
+                        line=dict(color="red", width=1.4, dash="dash"),
+                        annotation_text=f"h = {h_med:.2f}",
+                        annotation_position="top right",
+                        row=2, col=1,
+                    )
+
+            if n_alarms > 0:
+                for t_alarm in alarm_df["START_TIME"]:
+                    fig.add_vline(
+                        x=t_alarm,
+                        line=dict(color="red", width=1.0, dash="dot"),
+                    )
+
+        # ── оформление ────────────────────────────────────────────────────────
+        alarm_label = (f"  —  алармов: <b>{n_alarms}</b>"
+                       if n_alarms > 0 else "  —  алармов не выявлено")
+        fig.update_layout(
+            title=dict(text=f"{stem}{alarm_label}", font=dict(size=14)),
+            hovermode="x unified",
+            height=520 if has_cusum_s else 380,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                        xanchor="left", x=0),
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            margin=dict(l=60, r=30, t=75, b=50),
+        )
+        fig.update_xaxes(showgrid=True, gridcolor="#e5e7eb",
+                         tickformat="%d %b %Y")
+        fig.update_yaxes(showgrid=True, gridcolor="#e5e7eb")
+        fig.update_yaxes(title_text="Индекс (0–1)", row=1, col=1)
+        if has_cusum_s:
+            fig.update_yaxes(title_text="CUSUM S", row=2, col=1)
+            fig.update_xaxes(title_text="Дата", row=2, col=1)
+        else:
+            fig.update_xaxes(title_text="Дата", row=1, col=1)
+
+        return fig
+
+    # ── сборка задач ──────────────────────────────────────────────────────────
+    if roads_cusum_dir is None and departments_cusum_dir is None:
+        raise ValueError(
+            "Укажите хотя бы одну из папок: roads_cusum_dir или departments_cusum_dir"
+        )
+
+    tasks: list[tuple[Path, Path, str]] = []
+
+    if roads_cusum_dir is not None:
+        if roads_graph_dir is None:
+            raise ValueError("roads_graph_dir обязателен при заданном roads_cusum_dir")
+        for f in _find_cusum_full_csvs(Path(roads_cusum_dir)):
+            tasks.append((f, Path(roads_graph_dir), "road"))
+        if not tasks:
+            print(f"[WARN] В папке дорог не найдено CUSUM-файлов: {roads_cusum_dir}")
+
+    if departments_cusum_dir is not None:
+        if departments_graph_dir is None:
+            raise ValueError(
+                "departments_graph_dir обязателен при заданном departments_cusum_dir"
+            )
+        dept_tasks = []
+        for f in _find_cusum_full_csvs(Path(departments_cusum_dir)):
+            dept_tasks.append((f, Path(departments_graph_dir), "department"))
+        if not dept_tasks:
+            print(f"[WARN] В папке департаментов не найдено CUSUM-файлов: {departments_cusum_dir}")
+        tasks.extend(dept_tasks)
+
+    if not tasks:
+        print("[WARN] Нет файлов для построения графиков.")
+        return []
+
+    total = len(tasks)
+    print(f"\n{'='*52}")
+    print(f"  CUSUM HTML BATCH — файлов: {total}")
+    print(f"{'='*52}\n")
+
+    summary: list[dict] = []
+
+    for idx, (csv_path, graph_dir, source) in enumerate(tasks, start=1):
+        stem  = _stem_from_cusum_full(csv_path)
+        label = f"[{idx}/{total}] {source.upper()} | {stem}"
+        print(f"  {label}")
+
+        record: dict = {
+            "source":      source,
+            "csv_name":    csv_path.name,
+            "stem":        stem,
+            "graph_path":  None,
+            "alarm_count": 0,
+            "error":       None,
+        }
+
+        try:
+            df = pd.read_csv(csv_path)
+
+            if alarm_col not in df.columns:
+                raise ValueError(
+                    f"Колонка '{alarm_col}' не найдена в {csv_path.name}. "
+                    f"Доступные: {list(df.columns)}"
+                )
+
+            alarm_count = int(
+                pd.to_numeric(df[alarm_col], errors="coerce").fillna(0).sum()
+            )
+
+            fig = _build_html(df, stem, alarm_col, spike_col)
+
+            graph_dir.mkdir(parents=True, exist_ok=True)
+            out_path = graph_dir / f"{stem}_cumulative_cusum.html"
+            fig.write_html(
+                out_path,
+                include_plotlyjs="cdn",
+                full_html=True,
+                config={"scrollZoom": True, "displayModeBar": True},
+            )
+
+            record["alarm_count"] = alarm_count
+            record["graph_path"]  = str(out_path)
+            print(f"    алармов={alarm_count} → {out_path.name}")
+
+        except Exception as exc:
+            record["error"] = str(exc)
+            print(f"  [ERROR] {label} — {exc}")
+
+        summary.append(record)
+
+    ok_count  = sum(1 for r in summary if r["error"] is None)
+    err_count = sum(1 for r in summary if r["error"] is not None)
+
+    print(f"\n{'='*52}")
+    print(f"  CUSUM HTML BATCH ЗАВЕРШЁН")
+    print(f"  Успешно:  {ok_count} / {total}")
+    print(f"  Ошибок:   {err_count}")
+    print(f"{'='*52}\n")
+
+    return summary
+
+
 # Функция для оценки коэффициента авторегрессии первого порядка (rho) по полю TIME_DIFF и теста Ljung–Box для всех CSV-файлов в нескольких папках, с сохранением отчёта в итоговый CSV.
 def estimate_ar1_for_directories(
     source_dirs: list[Path],
